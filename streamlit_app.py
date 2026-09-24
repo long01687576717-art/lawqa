@@ -20,106 +20,114 @@ DEEPSEEK_MODEL = "deepseek-chat"
 TOP_K = 5
 
 _CSS = """<style>
-/* ===== 全局：深色法律主题 ===== */
+/* ===== 全局：LegalTech 浅色主题（深灰蓝，非纯黑） ===== */
 .stApp {
     background:
-        radial-gradient(1100px 520px at 12% -8%, rgba(30, 58, 138, 0.35) 0%, transparent 60%),
-        radial-gradient(900px 420px at 100% 0%, rgba(212, 175, 55, 0.12) 0%, transparent 55%),
-        linear-gradient(180deg, #0b1220 0%, #0e1626 100%);
+        radial-gradient(1100px 520px at 12% -8%, rgba(30, 58, 138, 0.06) 0%, transparent 60%),
+        radial-gradient(900px 420px at 100% 0%, rgba(212, 175, 55, 0.05) 0%, transparent 55%),
+        linear-gradient(180deg, #F8FAFC 0%, #EEF2F7 100%);
 }
 html, body, .stApp {
     font-family: "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
-    color: #e5e7eb;
+    color: #1f2937;
 }
 header[data-testid="stHeader"] { background: transparent; height: 2.6rem; }
 .block-container { padding-top: 1.4rem; padding-bottom: 3rem; max-width: 920px; }
 
-/* ===== 标题 ===== */
+/* ===== 标题（深蓝主色） ===== */
 .app-title {
     font-size: 2.35rem;
     font-weight: 800;
     letter-spacing: 2px;
     line-height: 1.2;
-    background: linear-gradient(115deg, #f3e0a0 0%, #d4af37 45%, #b8912b 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 2px 8px rgba(212, 175, 55, 0.30));
+    color: #1E3A8A;
 }
-.app-subtitle { color: #94a3b8; font-size: 0.95rem; letter-spacing: 3px; margin-top: 0.25rem; }
+.app-subtitle { color: #64748b; font-size: 0.95rem; letter-spacing: 3px; margin-top: 0.25rem; }
 .gold-line {
     height: 2px;
     border: none;
     margin: 0.8rem 0 1.1rem 0;
-    background: linear-gradient(90deg, #d4af37 0%, rgba(212, 175, 55, 0) 100%);
+    background: linear-gradient(90deg, #D4AF37 0%, #1E3A8A 55%, rgba(30, 58, 138, 0) 100%);
 }
 
 /* ===== 侧边栏 ===== */
 section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0a1120 0%, #0d1528 100%);
-    border-right: 1px solid rgba(212, 175, 55, 0.18);
+    background: linear-gradient(180deg, #FFFFFF 0%, #F1F5F9 100%);
+    border-right: 1px solid #E2E8F0;
 }
-.sidebar-header { font-size: 1.2rem; font-weight: 700; color: #f0d98c; letter-spacing: 1px; margin-bottom: 0.3rem; }
+.sidebar-header { font-size: 1.2rem; font-weight: 700; color: #1E3A8A; letter-spacing: 1px; margin-bottom: 0.3rem; }
 section[data-testid="stSidebar"] [data-testid="stTextInput"] input {
-    background: #111a2e !important;
-    border: 1px solid rgba(212, 175, 55, 0.55) !important;
+    background: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
     border-radius: 10px !important;
-    color: #e5e7eb !important;
+    color: #1f2937 !important;
     padding: 0.6rem 0.8rem !important;
 }
 section[data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {
-    border-color: #d4af37 !important;
-    box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.22) !important;
+    border-color: #1E3A8A !important;
+    box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.12) !important;
 }
 .sidebar-hint {
-    color: #94a3b8;
+    color: #64748b;
     font-size: 0.82rem;
     line-height: 1.7;
-    border-left: 2px solid rgba(212, 175, 55, 0.5);
+    border-left: 2px solid #D4AF37;
     padding-left: 0.6rem;
     margin-top: 0.5rem;
 }
 
-/* ===== 聊天气泡 ===== */
+/* ===== 聊天气泡（用户/AI 区分明显，柔和阴影 + 圆角） ===== */
 [data-testid="stChatMessage"] {
     border-radius: 16px;
     padding: 12px 16px;
     margin: 0.5rem 0;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
 }
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) {
-    background: linear-gradient(135deg, #1e3a8a 0%, #15244e 100%);
-    border: 1px solid rgba(59, 130, 246, 0.4);
-    border-left: 3px solid #d4af37;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-left: 3px solid #1E3A8A;
 }
 [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
-    background: #2f3a4f;
-    border: 1px solid #475569;
-    border-right: 3px solid #64748b;
+    background: #E3ECF9;
+    border: 1px solid #C7D9F2;
+    border-right: 3px solid #3B82F6;
 }
-[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] { color: #e5e7eb; }
+[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] { color: #1f2937; }
 
 /* ===== 展开器（参考法条/相似案例） ===== */
 [data-testid="stExpander"] {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(212, 175, 55, 0.22);
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid #E2E8F0;
     border-radius: 10px;
     margin-top: 0.4rem;
 }
 
-/* ===== 底部输入框 ===== */
+/* ===== 底部输入框（圆角 + 聚焦变色） ===== */
 [data-testid="stChatInput"] { border-radius: 22px; }
 [data-testid="stChatInput"] textarea {
-    background: #111a2e;
-    border: 1px solid #334155;
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
     border-radius: 20px;
-    color: #e5e7eb;
+    color: #1f2937;
     padding: 0.85rem 1rem;
     line-height: 1.6;
 }
 [data-testid="stChatInput"] textarea:focus {
-    border-color: #d4af37;
-    box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.2);
+    border-color: #1E3A8A;
+    box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.12);
+}
+
+/* ===== 主按钮（深蓝） ===== */
+button[data-testid="stBaseButton-primary"] {
+    background-color: #1E3A8A !important;
+    border-color: #1E3A8A !important;
+    color: #FFFFFF !important;
+}
+button[data-testid="stBaseButton-primary"]:hover {
+    background-color: #1E40AF !important;
+    border-color: #1E40AF !important;
+    color: #FFFFFF !important;
 }
 </style>"""
 
