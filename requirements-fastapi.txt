@@ -1,0 +1,8 @@
+# FastAPI 本地版依赖（原 requirements.txt 的内容，保留以便本地运行 FastAPI 版）
+fastapi
+uvicorn
+openai
+fastembed
+jieba
+python-dotenv
+numpy
