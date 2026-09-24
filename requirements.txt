@@ -2,3 +2,4 @@ streamlit
 openai
 jieba
 numpy
+python-dotenv

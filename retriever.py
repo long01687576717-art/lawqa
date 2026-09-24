@@ -120,6 +120,8 @@ class KnowledgeBase:
 
     # ---- 检索 ----
     RRF_K = 60  # Reciprocal Rank Fusion 平滑参数
+    MIN_CASE_SCORE = 0.8  # 案例最低相关度阈值：最高分低于此值说明该场景下无合适案例
+    MAX_CASES = 3         # 案例最多返回条数（硬性 [:3]）
 
     def _rrf_fuse(self, *score_arrays, top_n=30, k=5):
         """RRF 融合：把多个检索方法的排序结果合并成单一排名。
@@ -138,17 +140,31 @@ class KnowledgeBase:
             return []
         return [i for i, _ in sorted(rrf.items(), key=lambda kv: kv[1], reverse=True)[:k]]
 
-    def search(self, query, k=5):
-        """返回 (laws, cases)，各为 BM25 + 向量 RRF 融合后的 top-k 条目。"""
+    def _top_cases(self, scores, scenario, k, min_score):
+        """场景过滤 → 按得分排序取前 k → 最高分低于阈值则返回空。"""
+        if scores is None or len(scores) == 0:
+            return []
+        if scenario:
+            cand = [i for i in range(len(self.cases)) if self.cases[i].get("scenario") == scenario]
+        else:
+            cand = list(range(len(self.cases)))
+        if not cand:
+            return []
+        cand_sorted = sorted(cand, key=lambda i: float(scores[i]), reverse=True)[:k]
+        if float(scores[cand_sorted[0]]) < min_score:
+            return []
+        return cand_sorted
+
+    def search(self, query, scenario=None, k=5):
+        """返回 (laws, cases)。法条取 RRF top-k；案例按场景过滤 + BM25 排序 + 阈值淘汰。"""
         q = _tokenize(query)
         law_idx = self._rrf_fuse(
             self.law_bm25.scores(q),
             self._vector_scores(query, self.law_vecs),
             k=k,
         )
-        case_idx = self._rrf_fuse(
-            self.case_bm25.scores(q),
-            self._vector_scores(query, self.case_vecs),
-            k=k,
-        )
+        if scenario == "无":
+            case_idx = []
+        else:
+            case_idx = self._top_cases(self.case_bm25.scores(q), scenario, self.MAX_CASES, self.MIN_CASE_SCORE)
         return [self.laws[i] for i in law_idx], [self.cases[i] for i in case_idx]

@@ -52,14 +52,16 @@ def chat(req: ChatRequest, request: Request):
     if not api_key:
         return JSONResponse({"error": "请配置 API Key"}, status_code=401)
 
-    # 2. 查询改写：口语化问题 -> 法律专业检索词
+    # 2. 查询改写：口语化问题 -> 场景 + 法律专业检索词
     try:
-        rewrite = llm.rewrite_query(q, api_key)
+        rw = llm.rewrite_query(q, api_key)
+        scenario = rw.get("scenario")
+        keywords = rw.get("keywords") or q
     except Exception:
-        rewrite = q  # 改写失败则退回原问题继续检索
+        scenario, keywords = None, q  # 改写失败则退回原问题继续检索
 
-    # 3. 用改写后的词做混合检索
-    laws, cases = kb.search(rewrite, k=req.top_k)
+    # 3. 用改写后的词 + 场景做混合检索
+    laws, cases = kb.search(keywords, scenario=scenario, k=req.top_k)
 
     # 4. 用原问题 + 检索结果生成回答
     try:
@@ -67,7 +69,7 @@ def chat(req: ChatRequest, request: Request):
     except Exception as e:
         return JSONResponse({"error": f"调用大模型失败：{e}"}, status_code=500)
 
-    return {"answer": answer, "laws": laws, "cases": cases, "rewritten_query": rewrite}
+    return {"answer": answer, "laws": laws, "cases": cases, "rewritten_query": keywords, "scenario": scenario}
 
 
 if __name__ == "__main__":

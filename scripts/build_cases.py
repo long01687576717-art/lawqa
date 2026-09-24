@@ -44,6 +44,31 @@ FIELD_MAP = {
 # 标记行：以【标签】开头，或 "标签：" 开头
 MARKER_RE = re.compile(r"^\s*(?:【([^】]+)】|([^：:\n]{1,16})[:：])\s*(.*)$")
 
+# 场景标签规则：按顺序匹配（命中即归类）。labels 必须与 llm.py 改写提示中的核心场景一致
+SCENARIO_RULES = [
+    ("加班费", ["加班", "996", "超时", "延长工作时间", "隐形加班", "工时"]),
+    ("未签劳动合同", ["未签订书面劳动合同", "未签劳动合同", "未签书面", "二倍工资", "补签", "倒签"]),
+    ("女职工保护", ["女职工", "孕期", "产假", "哺乳期", "生育津贴", "三期"]),
+    ("试用期", ["试用期"]),
+    ("违法解除", ["违法解除", "末位淘汰", "不能胜任", "单方解除", "无固定期限劳动合同"]),
+    ("工伤认定", ["工伤", "上下班途中"]),
+    ("拖欠工资", ["拖欠", "恶意欠薪", "拒不支付劳动报酬", "欠薪"]),
+    ("社会保险", ["社会保险", "社保", "养老保险", "抚恤金", "生育保险"]),
+    ("经济补偿金", ["经济补偿", "协商一致解除", "期满终止", "劳动合同期满"]),
+    ("竞业限制", ["竞业限制", "商业秘密"]),
+    ("劳务派遣", ["劳务派遣", "派遣", "同工同酬"]),
+    ("年休假", ["年休假"]),
+]
+
+
+def classify_scenario(text):
+    """根据「标题 + 关键词」文本自动归类场景；无法归类返回「其他」。"""
+    for scenario, patterns in SCENARIO_RULES:
+        for p in patterns:
+            if p in text:
+                return scenario
+    return "其他"
+
 
 def read_text(path: Path) -> str:
     raw = path.read_bytes()
@@ -81,6 +106,8 @@ def parse_case(text: str) -> dict:
         text = "\n".join(p for p in parts if p).strip()
         if text:
             out[k] = text
+    # 场景标签：根据【标题】+【关键词】自动归类
+    out["scenario"] = classify_scenario(" ".join([out.get("title", ""), out.get("keywords", "")]))
     return out
 
 

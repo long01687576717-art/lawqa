@@ -1,4 +1,7 @@
 """调用 DeepSeek 大模型，基于检索到的法条和案例生成回答。"""
+import json
+import re
+
 import config
 
 # 按 api_key 缓存客户端，支持多用户各自携带自己的 key（BYOK）
@@ -11,13 +14,18 @@ SYSTEM_PROMPT = """你是一个专业的中国劳动法助手。你只能根据�
 2. 引用法条时写清楚法律名称和第几条；引用案例时写清楚案例名称。
 3. 若参考资料不足以回答，请如实说明「资料不足」，不要强行给出结论。
 4. 语言专业、简洁、通俗，用中文，适当分点，不要输出与问题无关的内容。
-5. 最后加一句：本回答仅供参考，不构成法律意见。"""
+5. 最后加一句：本回答仅供参考，不构成法律意见。
+6. 如果在参考资料中，案例的案由与用户提问的核心场景不符（例如用户问996，却给出了试用期案例），严禁在回答中引用该案例，直接忽略它。
+7. 如果【参考案例】为空或没有与问题场景高度相关的案例，请在回答中明确写出「本案参考资料中暂无高度相关的案例」，不要强行引用不相关的案例。"""
 
-REWRITE_SYSTEM_PROMPT = """你是法律信息检索专家。把用户口语化的法律问题，改写成用于检索法律条文和案例的关键词短语。
-要求：
-1. 只输出用空格分隔的关键词/短语，不要输出完整句子，不要解释。
-2. 使用规范的法律术语（例如：未签订书面劳动合同、二倍工资、经济补偿、违法解除劳动合同、加班费、拖欠劳动报酬、试用期、产假、竞业限制 等）。
-3. 保留原问题的核心诉求和法律要点，覆盖可能相关的多个法律概念。"""
+REWRITE_SYSTEM_PROMPT = """你是一个资深法律检索助手。请先判断用户的口语化问题属于以下哪个核心劳动法场景，再将其改写为适合检索的专业法律术语关键词。
+
+核心场景（只能从中选一个）：加班费、未签劳动合同、违法解除、工伤认定、试用期、女职工保护、拖欠工资、经济补偿金、竞业限制、劳务派遣、年休假、社会保险。
+
+如果用户问题完全不涉及劳动法，scenario 填「无」，keywords 填空字符串。
+
+你必须只输出一个 JSON 对象，不要输出任何解释、不要用代码块包裹，格式如下：
+{"scenario": "加班费", "keywords": "违法延长工作时间 强迫劳动 加班费"}"""
 
 
 def _get_client(api_key):
@@ -65,7 +73,10 @@ def generate_answer(question, laws, cases, api_key):
 
 
 def rewrite_query(question, api_key):
-    """把口语化问题改写成法律检索关键词（仅用于检索，不用于生成回答）。"""
+    """改写 + 场景判断，返回 {"scenario": ..., "keywords": ...}。
+
+    scenario 取值：12 个核心场景之一 / "无"（非劳动法）/ None（解析失败）。
+    """
     client = _get_client(api_key)
     resp = client.chat.completions.create(
         model=config.DEEPSEEK_MODEL,
@@ -76,4 +87,25 @@ def rewrite_query(question, api_key):
         temperature=0.1,
         stream=False,
     )
-    return resp.choices[0].message.content.strip()
+    return _parse_rewrite(resp.choices[0].message.content.strip(), question)
+
+
+def _parse_rewrite(raw, fallback_question):
+    """解析大模型返回的 JSON；解析失败则回退为「不限制场景 + 原问题」。"""
+    data = None
+    try:
+        data = json.loads(raw)
+    except Exception:
+        m = re.search(r"\{.*\}", raw, re.S)
+        if m:
+            try:
+                data = json.loads(m.group(0))
+            except Exception:
+                data = None
+    if not isinstance(data, dict):
+        return {"scenario": None, "keywords": fallback_question}
+    scenario = (data.get("scenario") or "").strip()
+    keywords = (data.get("keywords") or "").strip()
+    if scenario == "无" or not scenario:
+        return {"scenario": "无", "keywords": ""}
+    return {"scenario": scenario, "keywords": keywords or fallback_question}
