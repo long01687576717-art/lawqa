@@ -1,3 +1,4 @@
+# force rebuild: 2026-09-24
 # -*- coding: utf-8 -*-
 """劳动法知识库问答 —— Streamlit 版（BYOK + 轻量 BM25 检索）。
 
