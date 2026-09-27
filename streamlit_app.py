@@ -291,11 +291,33 @@ def _generate(client, question, laws, cases):
 
 
 # ---- 界面 ----
-def _render_refs(laws, cases):
+def _is_cited(law, answer):
+    """判断法条是否被回答引用（条号出现在回答文本中）。"""
+    if not answer:
+        return False
+    art_cn = law.get('article', '')
+    art_ar = lawmeta.cn_to_arabic(art_cn)
+    candidates = []
+    if art_cn:
+        candidates.append(f"第{art_cn}条")
+        candidates.append(f"{art_cn}条")
+    if art_ar is not None:
+        candidates.append(f"第{art_ar}条")
+    return any(c in answer for c in candidates)
+
+
+def _render_refs(laws, cases, answer=None):
     if laws:
-        with st.expander("📖 参考法条"):
-            for l in laws:
-                st.markdown(f"**《{l.get('law', '')}》第{l.get('article', '')}条**  \n{l.get('text', '')}")
+        cited = [l for l in laws if _is_cited(l, answer)] if answer else laws
+        uncited = [l for l in laws if l not in cited]
+        if cited:
+            with st.expander("📖 参考法条"):
+                for l in cited:
+                    st.markdown(f"**《{l.get('law', '')}》第{l.get('article', '')}条**  \n{l.get('text', '')}")
+        if uncited:
+            with st.expander("🗂️ 其他检索结果（未被引用）"):
+                for l in uncited:
+                    st.markdown(f"**《{l.get('law', '')}》第{l.get('article', '')}条**  \n{l.get('text', '')}")
     # 渲染"相似案例"前先检查长度：为 0 时彻底隐藏标题，不硬凑
     if cases:
         with st.expander("⚖️ 相似案例"):
@@ -355,7 +377,7 @@ for m in st.session_state.messages:
             st.caption(f"🔍 已自动为您提取检索词：{m['rewritten']}")
         st.markdown(m["content"])
         if m["role"] == "assistant":
-            _render_refs(m.get("laws"), m.get("cases"))
+            _render_refs(m.get("laws"), m.get("cases"), m.get("content"))
 
 prompt = st.chat_input("输入你的劳动法问题…")
 if prompt:
@@ -381,9 +403,12 @@ if prompt:
                     r_laws2, r_cases2 = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, scenario=scenario, k=15, extra_query=oral_query)
                     answer = _generate(client, prompt, r_laws2, r_cases2)
                     r_laws, r_cases = r_laws2, r_cases2
-            st.caption(f"🔍 已自动为您提取检索词：{keywords}")
+            shown_keywords = keywords
+            if scenario == "无" and oral_query:
+                shown_keywords = oral_query
+            st.caption(f"🔍 已自动为您提取检索词：{shown_keywords}")
             st.markdown(answer)
-            _render_refs(r_laws, r_cases)
+            _render_refs(r_laws, r_cases, answer)
             st.session_state.messages.append(
                 {"role": "assistant", "content": answer, "laws": r_laws, "cases": r_cases, "rewritten": keywords}
             )
