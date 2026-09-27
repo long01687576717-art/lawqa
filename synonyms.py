@@ -6,6 +6,7 @@
 
 注意：本表面向常见用工场景，与任何具体测试题无关。
 """
+import re
 
 # 口语词 -> 追加的法律术语（每个口语词只映射 1~2 个术语，避免噪声）
 HR_SYNONYMS = {
@@ -87,14 +88,36 @@ HR_SYNONYMS = {
 }
 
 
+def _age_to_terms(text):
+    """把问题中的具体年龄换算为法律分类术语（通用规则，不针对任何具体数字）。
+
+    - 未满 16 周岁 -> 未满十六周岁（禁止招用）
+    - 16 至 18 周岁 -> 未成年工
+    """
+    terms = []
+    # 「未满X岁/周岁」整体识别，避免被下面的「X岁」重复匹配
+    for _ in re.finditer(r'未满\s*(\d{1,2})\s*周?岁', text):
+        terms.append('未满十六周岁 未成年人 禁止招用')
+    # 去掉「未满X岁」后，再匹配独立的「X岁/周岁」
+    cleaned = re.sub(r'未满\s*\d{1,2}\s*周?岁', '', text)
+    for m in re.finditer(r'(?<!\d)(\d{1,2})\s*周?岁', cleaned):
+        age = int(m.group(1))
+        if age < 16:
+            terms.append('未满十六周岁 未成年人 禁止招用')
+        elif 16 <= age < 18:
+            terms.append('未成年工')
+    return list(dict.fromkeys(terms))
+
+
 def extra_terms(text, synonyms=None):
     """返回 text 中命中的口语词对应的法律术语列表（不含原文本）。
 
     按口语词长度从长到短匹配，避免「离职」先命中「离职证明」这类短词吞并长词的问题。
+    同时把数字年龄换算为法律分类术语（未满十六周岁 / 未成年工）。
     """
     if synonyms is None:
         synonyms = HR_SYNONYMS
-    if not text or not synonyms:
+    if not text:
         return []
     added = []
     for word in sorted(synonyms, key=len, reverse=True):
@@ -102,6 +125,9 @@ def extra_terms(text, synonyms=None):
             terms = synonyms[word]
             if terms not in added:
                 added.append(terms)
+    for t in _age_to_terms(text):
+        if t not in added:
+            added.append(t)
     return added
 
 
