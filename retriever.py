@@ -6,6 +6,8 @@ from pathlib import Path
 import jieba
 import numpy as np
 
+import lawmeta
+
 DATA_DIR = Path(__file__).resolve().parent / "data"
 EMBED_MODEL_NAME = "BAAI/bge-small-zh-v1.5"
 
@@ -57,6 +59,8 @@ class KnowledgeBase:
     def __init__(self):
         self.laws = self._load("laws.json")
         self.cases = self._load("cases.json")
+        self.citation_index = lawmeta.load_citation_index()
+        self.laws = lawmeta.attach_notes(self.laws)
 
         self.law_docs = [self._law_text(l) for l in self.laws]
         self.case_docs = [self._case_text(c) for c in self.cases]
@@ -155,16 +159,30 @@ class KnowledgeBase:
             return []
         return cand_sorted
 
-    def search(self, query, scenario=None, k=5):
-        """返回 (laws, cases)。法条取 RRF top-k；案例按场景过滤 + BM25 排序 + 阈值淘汰。"""
+    def search(self, query, scenario=None, k=5, extra_query=None):
+        """返回 (laws, cases)。法条取 RRF top-k（+ 口语扩展路合并 + 关联条文）；案例按场景过滤 + BM25 排序 + 阈值淘汰。"""
         q = _tokenize(query)
         law_idx = self._rrf_fuse(
             self.law_bm25.scores(q),
             self._vector_scores(query, self.law_vecs),
             k=k,
         )
+        laws = [self.laws[i] for i in law_idx]
+
+        # 口语扩展路：独立检索，去重合并（避免稀释主检索词）
+        if extra_query and extra_query != query:
+            eq = _tokenize(extra_query)
+            extra_idx = self._rrf_fuse(
+                self.law_bm25.scores(eq),
+                self._vector_scores(extra_query, self.law_vecs),
+                k=k,
+            )
+            laws = lawmeta.merge_two_routes(laws, [self.laws[i] for i in extra_idx])
+
         if scenario == "无":
             case_idx = []
         else:
             case_idx = self._top_cases(self.case_bm25.scores(q), scenario, self.MAX_CASES, self.MIN_CASE_SCORE)
-        return [self.laws[i] for i in law_idx], [self.cases[i] for i in case_idx]
+        # 关联条文联动召回：把引用 / 被引用的条文一并带出（不挤占原 top-k）
+        laws = lawmeta.expand_with_citations(laws, self.laws, self.citation_index)
+        return laws, [self.cases[i] for i in case_idx]

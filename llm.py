@@ -3,6 +3,7 @@ import json
 import re
 
 import config
+from synonyms import expand_query
 
 # 按 api_key 缓存客户端，支持多用户各自携带自己的 key（BYOK）
 _clients = {}
@@ -16,7 +17,10 @@ SYSTEM_PROMPT = """你是一个专业的中国劳动法助手。你只能根据�
 4. 语言专业、简洁、通俗，用中文，适当分点，不要输出与问题无关的内容。
 5. 最后加一句：本回答仅供参考，不构成法律意见。
 6. 如果在参考资料中，案例的案由与用户提问的核心场景不符（例如用户问996，却给出了试用期案例），严禁在回答中引用该案例，直接忽略它。
-7. 如果【参考案例】为空或没有与问题场景高度相关的案例，请在回答中明确写出「本案暂无高度相关案例，仅提供法条分析」，不要强行引用不相关的案例。"""
+7. 如果【参考案例】为空或没有与问题场景高度相关的案例，请在回答中明确写出「本案暂无高度相关案例，仅提供法条分析」，不要强行引用不相关的案例。
+8. 《劳动法》与《劳动合同法》就同一事项规定不一致时，优先适用《劳动合同法》并说明原因（新法优于旧法，两部法律均由全国人大常委会制定）。
+9. 如果某条法条附带了「调整说明」（形如"注意：……"），必须如实转述该说明，不得把已被后续法律法规调整的过时规定当作现行规定回答。
+10. 问题涉及知识库未收录的专门法规或地方规定时，明确告知用户另有规定、本库未收录，不得用不完整规定冒充完整结论。"""
 
 REWRITE_SYSTEM_PROMPT = """你是一个资深法律检索助手。请先判断用户的口语化问题属于以下哪个核心劳动法场景，再将其改写为适合检索的专业法律术语关键词。
 
@@ -41,7 +45,11 @@ def build_prompt(question, laws, cases):
     parts = ["【用户问题】", question, "", "【参考法条】"]
     if laws:
         for i, l in enumerate(laws, 1):
-            parts.append(f"{i}. 《{l.get('law', '')}》第{l.get('article', '')}条：{l.get('text', '')}")
+            tag = "（关联条文）" if l.get('_cited') else ""
+            line = f"{i}. 《{l.get('law', '')}》第{l.get('article', '')}条{tag}：{l.get('text', '')}"
+            if l.get('note'):
+                line += f"【调整说明】{l.get('note')}"
+            parts.append(line)
     else:
         parts.append("（无）")
 
@@ -87,7 +95,12 @@ def rewrite_query(question, api_key):
         temperature=0.1,
         stream=False,
     )
-    return _parse_rewrite(resp.choices[0].message.content.strip(), question)
+    rw = _parse_rewrite(resp.choices[0].message.content.strip(), question)
+    # 主检索词：改写后的专业词（可能为空，由调用方用原问题兜底）
+    rw["keywords"] = (rw.get("keywords") or "").strip()
+    # 口语扩展检索词：原问题 + 同义词扩展，作为独立一路检索（避免稀释主检索词）
+    rw["oral_query"] = expand_query(question)
+    return rw
 
 
 def _parse_rewrite(raw, fallback_question):

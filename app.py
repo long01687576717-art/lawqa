@@ -57,15 +57,21 @@ def chat(req: ChatRequest, request: Request):
         rw = llm.rewrite_query(q, api_key)
         scenario = rw.get("scenario")
         keywords = rw.get("keywords") or q
+        oral_query = rw.get("oral_query") or ""
     except Exception:
-        scenario, keywords = None, q  # 改写失败则退回原问题继续检索
+        scenario, keywords, oral_query = None, q, ""  # 改写失败则退回原问题继续检索
 
-    # 3. 用改写后的词 + 场景做混合检索
-    laws, cases = kb.search(keywords, scenario=scenario, k=req.top_k)
+    # 3. 用改写后的词 + 场景做混合检索（口语扩展词作为独立一路补充召回）
+    laws, cases = kb.search(keywords, scenario=scenario, k=req.top_k, extra_query=oral_query)
 
     # 4. 用原问题 + 检索结果生成回答
     try:
         answer = llm.generate_answer(q, laws, cases, api_key)
+        # 改进3：若模型判断资料不足，扩大召回（k=15）二次检索再生成
+        if "资料不足" in answer:
+            laws2, cases2 = kb.search(keywords, scenario=scenario, k=15, extra_query=oral_query)
+            answer = llm.generate_answer(q, laws2, cases2, api_key)
+            laws, cases = laws2, cases2
     except Exception as e:
         return JSONResponse({"error": f"调用大模型失败：{e}"}, status_code=500)
 

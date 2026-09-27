@@ -13,6 +13,7 @@ import jieba
 import streamlit as st
 from openai import OpenAI
 
+import lawmeta
 from llm import rewrite_query
 
 # ---- 常量 ----
@@ -145,7 +146,10 @@ SYSTEM_PROMPT = """你是一个专业的中国劳动法助手。你只能根据�
 4. 语言专业、简洁、通俗，用中文，适当分点，不要输出与问题无关的内容。
 5. 最后加一句：本回答仅供参考，不构成法律意见。
 6. 如果在参考资料中，案例的案由与用户提问的核心场景不符（例如用户问996，却给出了试用期案例），严禁在回答中引用该案例，直接忽略它。
-7. 如果【参考案例】为空或没有与问题场景高度相关的案例，请在回答中明确写出「本案暂无高度相关案例，仅提供法条分析」，不要强行引用不相关的案例。"""
+7. 如果【参考案例】为空或没有与问题场景高度相关的案例，请在回答中明确写出「本案暂无高度相关案例，仅提供法条分析」，不要强行引用不相关的案例。
+8. 《劳动法》与《劳动合同法》就同一事项规定不一致时，优先适用《劳动合同法》并说明原因（新法优于旧法，两部法律均由全国人大常委会制定）。
+9. 如果某条法条附带了「调整说明」（形如"注意：……"），必须如实转述该说明，不得把已被后续法律法规调整的过时规定当作现行规定回答。
+10. 问题涉及知识库未收录的专门法规或地方规定时，明确告知用户另有规定、本库未收录，不得用不完整规定冒充完整结论。"""
 
 # ---- 分词 + BM25（纯 Python，无 numpy / fastembed 依赖）----
 def _tokenize(text):
@@ -200,22 +204,32 @@ def _load_json(name):
 def build_index():
     laws = _load_json("laws.json")
     cases = _load_json("cases.json")
+    citation_index = lawmeta.load_citation_index()
+    laws = lawmeta.attach_notes(laws)
     law_docs = [f"{l.get('law', '')} 第{l.get('article', '')}条 {l.get('text', '')}" for l in laws]
     case_docs = [" ".join(str(c.get(k, "")) for k in ("title", "summary", "ruling", "keywords")) for c in cases]
     law_bm25 = BM25([_tokenize(t) for t in law_docs])
     case_bm25 = BM25([_tokenize(t) for t in case_docs])
-    return laws, cases, law_bm25, case_bm25
+    return laws, cases, law_bm25, case_bm25, citation_index
 
 
-def search(query, laws, cases, law_bm25, case_bm25, scenario=None, k=TOP_K):
+def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, scenario=None, k=TOP_K, extra_query=None):
     q = _tokenize(query)
     law_idx = _top(law_bm25.scores(q), k)
+    result_laws = [laws[i] for i in law_idx]
+    # 口语扩展路：独立检索，去重合并（避免稀释主检索词）
+    if extra_query and extra_query != query:
+        eq = _tokenize(extra_query)
+        extra_idx = _top(law_bm25.scores(eq), k)
+        result_laws = lawmeta.merge_two_routes(result_laws, [laws[i] for i in extra_idx])
     if scenario == "无":
         case_idx = []
     else:
         # 场景过滤 → 得分排序 → [:MAX_CASES] → 最高分低于阈值则返回空
         case_idx = _top_cases(case_bm25.scores(q), cases, scenario, MAX_CASES, MIN_CASE_SCORE)
-    return [laws[i] for i in law_idx], [cases[i] for i in case_idx]
+    # 关联条文联动召回：把引用 / 被引用的条文一并带出（不挤占原 top-k）
+    result_laws = lawmeta.expand_with_citations(result_laws, laws, citation_index)
+    return result_laws, [cases[i] for i in case_idx]
 
 
 def _top(scores, k):
@@ -244,7 +258,11 @@ def _build_prompt(question, laws, cases):
     parts = ["【用户问题】", question, "", "【参考法条】"]
     if laws:
         for i, l in enumerate(laws, 1):
-            parts.append(f"{i}. 《{l.get('law', '')}》第{l.get('article', '')}条：{l.get('text', '')}")
+            tag = "（关联条文）" if l.get('_cited') else ""
+            line = f"{i}. 《{l.get('law', '')}》第{l.get('article', '')}条{tag}：{l.get('text', '')}"
+            if l.get('note'):
+                line += f"【调整说明】{l.get('note')}"
+            parts.append(line)
     else:
         parts.append("（无）")
     parts += ["", "【参考案例】"]
@@ -325,7 +343,7 @@ if not api_key:
     st.stop()
 
 # 加载索引（缓存）
-laws, cases, law_bm25, case_bm25 = build_index()
+laws, cases, law_bm25, case_bm25, citation_index = build_index()
 
 # 聊天历史
 if "messages" not in st.session_state:
@@ -353,10 +371,16 @@ if prompt:
                     rw = rewrite_query(prompt, api_key)
                     scenario = rw.get("scenario")
                     keywords = rw.get("keywords") or prompt
+                    oral_query = rw.get("oral_query") or ""
                 except Exception:
-                    scenario, keywords = None, prompt  # 改写失败则用原问题检索
-                r_laws, r_cases = search(keywords, laws, cases, law_bm25, case_bm25, scenario=scenario)
+                    scenario, keywords, oral_query = None, prompt, ""  # 改写失败则用原问题检索
+                r_laws, r_cases = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, scenario=scenario, extra_query=oral_query)
                 answer = _generate(client, prompt, r_laws, r_cases)
+                # 改进3：若模型判断资料不足，扩大召回（k=15）二次检索再生成
+                if "资料不足" in answer:
+                    r_laws2, r_cases2 = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, scenario=scenario, k=15, extra_query=oral_query)
+                    answer = _generate(client, prompt, r_laws2, r_cases2)
+                    r_laws, r_cases = r_laws2, r_cases2
             st.caption(f"🔍 已自动为您提取检索词：{keywords}")
             st.markdown(answer)
             _render_refs(r_laws, r_cases)
