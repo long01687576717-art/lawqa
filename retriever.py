@@ -60,6 +60,7 @@ class KnowledgeBase:
         self.laws = self._load("laws.json")
         self.cases = self._load("cases.json")
         self.citation_index = lawmeta.load_citation_index()
+        self.law_mapping = lawmeta.load_law_mapping()
         self.laws = lawmeta.attach_notes(self.laws)
 
         self.law_docs = [self._law_text(l) for l in self.laws]
@@ -184,5 +185,5 @@ class KnowledgeBase:
         else:
             case_idx = self._top_cases(self.case_bm25.scores(q), scenario, self.MAX_CASES, self.MIN_CASE_SCORE)
         # 关联条文联动召回：把引用 / 被引用的条文一并带出（不挤占原 top-k）
-        laws = lawmeta.expand_with_citations(laws, self.laws, self.citation_index)
+        laws = lawmeta.expand_with_citations(laws, self.laws, self.citation_index, self.law_mapping)
         return laws, [self.cases[i] for i in case_idx]

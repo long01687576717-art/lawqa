@@ -137,7 +137,7 @@ button[data-testid="stBaseButton-primary"]:hover {
 }
 </style>"""
 
-SYSTEM_PROMPT = """你是一个专业的中国劳动法助手。你只能根据提供的参考资料回答关于劳动法、劳动合同、劳动争议、女职工保护、工资、加班等劳动法领域的问题。如果用户问的问题与劳动法完全无关（例如：如何做菜、写代码、股票推荐、天气、非劳动纠纷的刑事或民事问题），你必须礼貌拒绝回答，并提示用户：「抱歉，我目前只专注于劳动法相关的咨询，无法回答其他领域的问题。」严禁使用你自己的预训练通用知识去回答法律之外的问题。
+SYSTEM_PROMPT = """你是一个专业的中国劳动法助手。你只能根据提供的参考资料回答关于劳动法、劳动合同、劳动争议、女职工保护、工资、加班等劳动法领域的问题。如果用户问的问题与劳动法完全无关（例如：如何做菜、写代码、股票推荐、天气、非劳动纠纷的刑事或民事问题），你必须礼貌拒绝回答，并提示用户：「抱歉，我目前只专注于劳动法相关的咨询，无法回答其他领域的问题。」严禁使用你自己的预训练通用知识去回答法律之外的问题。拒答仅适用于与劳动法明显无关的问题；属于劳动法范畴但参考资料不足的问题，不得使用拒答语句，应按照第10条如实说明并建议查阅，两类表述不得同时出现。
 
 回答劳动法问题时，遵循以下要求：
 1. 只依据【参考资料】中给出的法条和案例作答，严禁编造法条序号、条文内容或案号。
@@ -149,7 +149,9 @@ SYSTEM_PROMPT = """你是一个专业的中国劳动法助手。你只能根据�
 7. 如果【参考案例】为空或没有与问题场景高度相关的案例，请在回答中明确写出「本案暂无高度相关案例，仅提供法条分析」，不要强行引用不相关的案例。
 8. 《劳动法》与《劳动合同法》就同一事项规定不一致时，优先适用《劳动合同法》并说明原因（新法优于旧法，两部法律均由全国人大常委会制定）。
 9. 如果某条法条附带了「调整说明」（形如"注意：……"），必须如实转述该说明，不得把已被后续法律法规调整的过时规定当作现行规定回答。
-10. 问题涉及知识库未收录的专门法规或地方规定时，可以说明相关法规名称并建议用户查阅，但不得输出该法规的具体内容（条号、适用要件、天数、比例、金额等），不得用不完整规定冒充完整结论。"""
+10. 问题涉及知识库未收录的专门法规或地方规定时，可以说明相关法规名称并建议用户查阅，但不得输出该法规的具体内容（条号、适用要件、天数、比例、金额等），不得用不完整规定冒充完整结论。
+11. 只能引用【参考资料】中实际出现的条文；需要的条文在参考资料中未提供时，如实说明「相关条文未检索到」，不得凭记忆编造条号或条文内容；涉及库外法规时只写法规名称，不写条号。法条附带的调整说明中已写明的内容（包括其中的法规名称和条号）可以如实转述，本条限制的是参考资料之外、凭记忆补充的内容。
+12. 全文使用中文，不得夹杂英文。"""
 
 # ---- 分词 + BM25（纯 Python，无 numpy / fastembed 依赖）----
 def _tokenize(text):
@@ -205,15 +207,16 @@ def build_index():
     laws = _load_json("laws.json")
     cases = _load_json("cases.json")
     citation_index = lawmeta.load_citation_index()
+    law_mapping = lawmeta.load_law_mapping()
     laws = lawmeta.attach_notes(laws)
     law_docs = [f"{l.get('law', '')} 第{l.get('article', '')}条 {l.get('text', '')}" for l in laws]
     case_docs = [" ".join(str(c.get(k, "")) for k in ("title", "summary", "ruling", "keywords")) for c in cases]
     law_bm25 = BM25([_tokenize(t) for t in law_docs])
     case_bm25 = BM25([_tokenize(t) for t in case_docs])
-    return laws, cases, law_bm25, case_bm25, citation_index
+    return laws, cases, law_bm25, case_bm25, citation_index, law_mapping
 
 
-def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, scenario=None, k=TOP_K, extra_query=None):
+def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, law_mapping=None, scenario=None, k=TOP_K, extra_query=None):
     q = _tokenize(query)
     law_idx = _top(law_bm25.scores(q), k)
     result_laws = [laws[i] for i in law_idx]
@@ -228,7 +231,7 @@ def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, scenari
         # 场景过滤 → 得分排序 → [:MAX_CASES] → 最高分低于阈值则返回空
         case_idx = _top_cases(case_bm25.scores(q), cases, scenario, MAX_CASES, MIN_CASE_SCORE)
     # 关联条文联动召回：把引用 / 被引用的条文一并带出（不挤占原 top-k）
-    result_laws = lawmeta.expand_with_citations(result_laws, laws, citation_index)
+    result_laws = lawmeta.expand_with_citations(result_laws, laws, citation_index, law_mapping)
     return result_laws, [cases[i] for i in case_idx]
 
 
@@ -365,7 +368,7 @@ if not api_key:
     st.stop()
 
 # 加载索引（缓存）
-laws, cases, law_bm25, case_bm25, citation_index = build_index()
+laws, cases, law_bm25, case_bm25, citation_index, law_mapping = build_index()
 
 # 聊天历史
 if "messages" not in st.session_state:
@@ -396,11 +399,11 @@ if prompt:
                     oral_query = rw.get("oral_query") or ""
                 except Exception:
                     scenario, keywords, oral_query = None, prompt, ""  # 改写失败则用原问题检索
-                r_laws, r_cases = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, scenario=scenario, extra_query=oral_query)
+                r_laws, r_cases = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, law_mapping, scenario=scenario, extra_query=oral_query)
                 answer = _generate(client, prompt, r_laws, r_cases)
                 # 改进3：若模型判断资料不足，扩大召回（k=15）二次检索再生成
                 if "资料不足" in answer:
-                    r_laws2, r_cases2 = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, scenario=scenario, k=15, extra_query=oral_query)
+                    r_laws2, r_cases2 = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, law_mapping, scenario=scenario, k=15, extra_query=oral_query)
                     answer = _generate(client, prompt, r_laws2, r_cases2)
                     r_laws, r_cases = r_laws2, r_cases2
             shown_keywords = keywords

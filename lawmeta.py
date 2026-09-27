@@ -56,6 +56,10 @@ def load_citation_index():
     return _load_json("citation_index.json")
 
 
+def load_law_mapping():
+    return _load_json("law_mapping.json")
+
+
 def attach_notes(laws, notes=None):
     """给法条 dict 列表附加 note（不改动法条 text 原文），返回新列表。"""
     if notes is None:
@@ -74,15 +78,18 @@ def attach_notes(laws, notes=None):
     return out
 
 
-def expand_with_citations(top_laws, all_laws, index=None, max_extra=3):
-    """把关联条文追加到 top_laws 后面（标记 _cited=True），返回新列表。
+def expand_with_citations(top_laws, all_laws, index=None, mapping=None, max_extra=4):
+    """把新旧法对应条文（优先）与引用关系关联条文（次之）追加到 top_laws 后面。
 
-    关联关系由 citation_index.json 提供（双向：A 引用 B 则 A、B 互相关联）。
-    追加的关联条文不挤占原 top-k，数量上限 max_extra。
+    - 对应条文来自 law_mapping.json（劳动法 -> 劳动合同法），标记 _mapped=True；
+    - 引用关系来自 citation_index.json（双向），标记 _cited=True。
+    两者合计追加不超过 max_extra 条，均不挤占原 top-k。
     """
     if index is None:
         index = load_citation_index()
-    if not index:
+    if mapping is None:
+        mapping = load_law_mapping()
+    if not index and not mapping:
         return top_laws
     law_by_key = {}
     for l in all_laws:
@@ -92,16 +99,27 @@ def expand_with_citations(top_laws, all_laws, index=None, max_extra=3):
     for l in top_laws:
         seen.add(law_key(l.get('law', ''), cn_to_arabic(l.get('article', ''))))
     result = list(top_laws)
+
+    def _append(rel, flag):
+        if rel in seen or rel not in law_by_key:
+            return False
+        seen.add(rel)
+        d = dict(law_by_key[rel])
+        d[flag] = True
+        result.append(d)
+        return len(result) >= len(top_laws) + max_extra
+
+    # 1. 新旧法对应条文（优先）
+    for l in top_laws:
+        key = law_key(l.get('law', ''), cn_to_arabic(l.get('article', '')))
+        for rel in mapping.get(key, []):
+            if _append(rel, '_mapped'):
+                return result
+    # 2. 引用关系关联条文（次之）
     for l in top_laws:
         key = law_key(l.get('law', ''), cn_to_arabic(l.get('article', '')))
         for rel in index.get(key, []):
-            if rel in seen or rel not in law_by_key:
-                continue
-            seen.add(rel)
-            d = dict(law_by_key[rel])
-            d['_cited'] = True
-            result.append(d)
-            if len(result) >= len(top_laws) + max_extra:
+            if _append(rel, '_cited'):
                 return result
     return result
 
