@@ -1,5 +1,15 @@
 # -*- coding: utf-8 -*-
 """本地测试：rewrite_query 改写 + BM25 检索，直接打印结果。"""
+
+import os
+import sys
+from pathlib import Path
+
+EVAL_DIR = Path(__file__).resolve().parent.parent
+ROOT = EVAL_DIR.parents[1]
+RESULTS = EVAL_DIR / "results"
+sys.path[:0] = [str(ROOT), str(EVAL_DIR)]
+os.chdir(ROOT)  # 数据路径按项目根目录解析
 import json
 import math
 from pathlib import Path
@@ -7,7 +17,7 @@ from pathlib import Path
 import jieba
 from llm import rewrite_query
 
-BASE = Path(__file__).resolve().parent
+BASE = ROOT
 
 # 读 key（仅本地测试用）
 key = ""
