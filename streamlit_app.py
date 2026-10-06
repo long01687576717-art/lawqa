@@ -215,10 +215,11 @@ def build_index():
     law_bm25 = BM25([_tokenize(t) for t in law_docs])
     case_bm25 = BM25([_tokenize(t) for t in case_docs])
     case_idf = case_tags.tag_idf(cases)
-    return laws, cases, law_bm25, case_bm25, citation_index, law_mapping, case_idf
+    case_title_bm25 = BM25([_tokenize(c.get("title", "")) for c in cases])
+    return laws, cases, law_bm25, case_bm25, citation_index, law_mapping, case_idf, case_title_bm25
 
 
-def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, law_mapping=None, scenario=None, k=TOP_K, extra_query=None, case_idf=None):
+def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, law_mapping=None, scenario=None, k=TOP_K, extra_query=None, case_idf=None, case_title_bm25=None):
     q = _tokenize(query)
     # 分层检索：核心法律（劳动法、劳动合同法）与配套法规分开排名，避免配套条文挤占核心条文
     core = [i for i, l in enumerate(laws) if lawmeta.is_core(l.get("law", ""))]
@@ -233,7 +234,9 @@ def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, law_map
         result_laws = lawmeta.merge_two_routes(result_laws, [laws[i] for i in extra_idx])
     # 案例：用「改写词 + 原问题口语扩展」识别方向标签并打分（改写为「无」时也能靠标签找到案例）
     case_query = f"{query} {extra_query or ''}".strip()
-    case_idx = case_tags.select_cases(cases, case_bm25.scores(_tokenize(case_query)), case_query, scenario, idf=case_idf)
+    cq = _tokenize(case_query)
+    case_idx = case_tags.select_cases(cases, case_bm25.scores(cq), case_query, scenario, idf=case_idf,
+                                      title_scores=case_title_bm25.scores(cq) if case_title_bm25 else None)
     # 关联条文联动召回：把引用 / 被引用的条文一并带出（不挤占原 top-k）
     result_laws = lawmeta.expand_with_citations(result_laws, laws, citation_index, law_mapping)
     return result_laws, [cases[i] for i in case_idx]
@@ -368,7 +371,7 @@ if not api_key:
     st.stop()
 
 # 加载索引（缓存）
-laws, cases, law_bm25, case_bm25, citation_index, law_mapping, case_idf = build_index()
+laws, cases, law_bm25, case_bm25, citation_index, law_mapping, case_idf, case_title_bm25 = build_index()
 
 # 聊天历史
 if "messages" not in st.session_state:
@@ -399,11 +402,11 @@ if prompt:
                     oral_query = rw.get("oral_query") or ""
                 except Exception:
                     scenario, keywords, oral_query = None, prompt, ""  # 改写失败则用原问题检索
-                r_laws, r_cases = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, law_mapping, scenario=scenario, extra_query=oral_query, case_idf=case_idf)
+                r_laws, r_cases = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, law_mapping, scenario=scenario, extra_query=oral_query, case_idf=case_idf, case_title_bm25=case_title_bm25)
                 answer = _generate(client, prompt, r_laws, r_cases)
                 # 改进3：若模型判断资料不足，扩大召回（k=15）二次检索再生成
                 if "资料不足" in answer:
-                    r_laws2, r_cases2 = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, law_mapping, scenario=scenario, k=15, extra_query=oral_query, case_idf=case_idf)
+                    r_laws2, r_cases2 = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, law_mapping, scenario=scenario, k=15, extra_query=oral_query, case_idf=case_idf, case_title_bm25=case_title_bm25)
                     answer = _generate(client, prompt, r_laws2, r_cases2)
                     r_laws, r_cases = r_laws2, r_cases2
             shown_keywords = keywords

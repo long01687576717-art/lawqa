@@ -74,6 +74,7 @@ class KnowledgeBase:
         self.other_idx = np.where(~is_core)[0]
         self.case_bm25 = BM25([_tokenize(t) for t in self.case_docs])
         self.case_idf = case_tags.tag_idf(self.cases)
+        self.case_title_bm25 = BM25([_tokenize(c.get("title", "")) for c in self.cases])
 
         self.embedder = None
         self.law_vecs = None
@@ -173,7 +174,8 @@ class KnowledgeBase:
         # 案例：用「改写词 + 原问题口语扩展」识别方向标签并打分（改写为「无」时也能靠标签找到案例）
         case_query = f"{query} {extra_query or ''}".strip()
         case_idx = case_tags.select_cases(
-            self.cases, self.case_bm25.scores(_tokenize(case_query)), case_query, scenario, idf=self.case_idf
+            self.cases, self.case_bm25.scores(_tokenize(case_query)), case_query, scenario, idf=self.case_idf,
+            title_scores=self.case_title_bm25.scores(_tokenize(case_query)),
         )
         # 关联条文联动召回：把引用 / 被引用的条文一并带出（不挤占原 top-k）
         laws = lawmeta.expand_with_citations(laws, self.laws, self.citation_index, self.law_mapping)
