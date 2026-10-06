@@ -36,6 +36,7 @@ from case_tags import TAGS, primary_scenario, tags_of  # noqa: E402
 DATA = Path(__file__).resolve().parent.parent / "data"
 RAW_DIR = DATA / "_cases_raw"
 OUT = DATA / "cases.json"
+RULING_MAX = 200  # 卡片上「裁判要点/结果」最多显示的字数
 
 # 各种可能的标签 → 标准字段名
 FIELD_MAP = {
@@ -101,9 +102,10 @@ def parse_case(text: str) -> dict:
         raise ValueError(f"未知标签 {unknown}（可选值见 case_tags.TAGS）")
     out["tags"] = tags
     out["scenario"] = primary_scenario(tags)
-    # 界面展示用：有裁判要点用要点，否则用裁判结果；早年公报案例两者都没有，截取案例分析开头
-    analysis = out.get("analysis", "")
-    out["ruling"] = out.get("gist") or out.get("result") or (analysis[:200] + "……" if len(analysis) > 200 else analysis)
+    # 界面卡片展示用：有裁判要点用要点，否则用裁判结果，早年公报案例两者都没有则用案例分析；
+    # 只截取前 RULING_MAX 字（部分批次的处理结果含完整说理，过长），全文见原文链接
+    ruling = out.get("gist") or out.get("result") or out.get("analysis", "")
+    out["ruling"] = ruling[:RULING_MAX] + "……" if len(ruling) > RULING_MAX else ruling
     return out
 
 
