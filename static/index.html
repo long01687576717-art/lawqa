@@ -3,408 +3,621 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>劳动法知识库问答</title>
+<title>劳动法问答</title>
 <style>
   :root {
-    --bg: #0f1220;
-    --panel: #1a1f35;
-    --panel2: #20263f;
-    --text: #e2e8f0;
-    --muted: #94a3b8;
-    --accent: #38bdf8;
-    --green: #22c55e;
-    --law: #4ade80;
-    --case: #fbbf24;
-    --border: #2a3350;
+    --paper: #f5f6f8;
+    --surface: #ffffff;
+    --ink: #1c1f24;
+    --ink2: #4a5160;
+    --muted: #7a8190;
+    --rule: #e2e5ea;
+    --red: #a8201a;
+    --red-soft: #fbedec;
+    --link: #1d4e89;
+    --user: #e9edf3;
+    --shadow: 0 1px 2px rgba(28, 31, 36, .06), 0 4px 16px rgba(28, 31, 36, .06);
+    --serif: "Source Han Serif SC", "Noto Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", "SimSun", serif;
+    --sans: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #121418;
+      --surface: #1a1d22;
+      --ink: #e7e9ec;
+      --ink2: #b5bac3;
+      --muted: #8a909b;
+      --rule: #2a2e35;
+      --red: #f06a5e;
+      --red-soft: #3a1f1d;
+      --link: #8ab4f8;
+      --user: #252a32;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
+    }
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
-
+  html, body { height: 100%; }
   body {
-    min-height: 100vh;
-    background: radial-gradient(circle at 50% 0%, #1c2340 0%, var(--bg) 70%);
-    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-    color: var(--text);
-    display: flex;
-    justify-content: center;
-    padding: 16px;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100dvh;
+    overflow: hidden;
   }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 4px; }
 
-  .app {
-    width: 100%;
-    max-width: 760px;
-    display: flex;
-    flex-direction: column;
-    height: calc(100vh - 32px);
-    gap: 12px;
-  }
-
+  /* 顶栏：红头线是整页唯一的强调 */
   header {
+    border-top: 4px solid var(--red);
+    background: var(--surface);
+    border-bottom: 1px solid var(--rule);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 4px 2px;
+    padding: 10px 20px;
+    gap: 12px;
   }
-
-  header h1 { font-size: 20px; letter-spacing: 1px; }
-  header .sub { color: var(--muted); font-size: 12.5px; }
-
-  .header-right { display: flex; align-items: center; gap: 12px; }
-
-  .settings-btn {
-    background: transparent;
-    color: var(--muted);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 6px 12px;
-    font-size: 13px;
-    cursor: pointer;
+  .brand { font-family: var(--serif); font-size: 20px; font-weight: 700; letter-spacing: .08em; }
+  .brand small { font-family: var(--sans); font-size: 12.5px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-left: 10px; }
+  .actions { display: flex; gap: 6px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 14px; color: var(--ink2);
+    padding: 6px 12px; border-radius: 8px; border: 1px solid var(--rule);
+    background: var(--surface);
   }
-  .settings-btn:hover { color: var(--text); border-color: var(--accent); }
+  .btn:hover { color: var(--ink); border-color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: #2e9d5b; }
 
-  .settings {
-    display: none;
-    flex-direction: column;
-    gap: 8px;
-    background: var(--panel);
-    border-radius: 12px;
-    padding: 12px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  /* 主体：对话 + 依据面板 */
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 420px; min-height: 0; }
+  .col { display: flex; flex-direction: column; min-height: 0; }
+  .thread { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+  .thread-inner { max-width: 760px; margin: 0 auto; padding: 28px 24px 12px; display: flex; flex-direction: column; gap: 28px; }
+
+  /* 空白首页 */
+  .intro h1 { font-family: var(--serif); font-size: 28px; line-height: 1.4; letter-spacing: .04em; margin: 12px 0 8px; }
+  .intro p { color: var(--ink2); font-size: 15px; }
+  .groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 24px; margin-top: 28px; }
+  .group h2 { font-size: 13.5px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+  .ask {
+    display: block; width: 100%; text-align: left;
+    font-size: 14.5px; line-height: 1.55; color: var(--ink);
+    padding: 9px 12px; margin-bottom: 6px;
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 8px;
   }
-  .settings.open { display: flex; }
+  .ask:hover { border-color: var(--red); }
 
-  .settings-row { display: flex; gap: 10px; }
-  .settings-row input {
-    flex: 1;
-    background: var(--panel2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text);
-    font: inherit;
-    font-size: 14px;
-    padding: 10px 12px;
-    outline: none;
+  /* 问 */
+  .q { scroll-margin-top: 16px; align-self: flex-end; max-width: 80%; background: var(--user); padding: 10px 14px; border-radius: 12px 12px 4px 12px; white-space: pre-wrap; word-break: break-word; }
+
+  /* 答 */
+  .a { position: relative; padding-left: 16px; border-left: 2px solid transparent; }
+  .a.active { border-left-color: var(--red); }
+  .answer { font-size: 16px; line-height: 1.85; word-break: break-word; }
+  .answer p { margin: 0 0 .8em; }
+  .answer h3 { font-family: var(--serif); font-size: 17px; font-weight: 700; margin: 1.3em 0 .5em; }
+  .answer h3:first-child { margin-top: 0; }
+  .answer ul, .answer ol { margin: 0 0 .8em 1.4em; }
+  .answer li { margin-bottom: .35em; padding-left: .2em; }
+  .answer b { font-weight: 700; }
+  .answer .note { font-size: 13px; color: var(--muted); margin-top: 1.2em; }
+  .cite { color: var(--red); text-decoration: underline dashed 1px; text-underline-offset: 4px; }
+  .cite:hover { background: var(--red-soft); text-decoration: underline dashed 1px; }
+  .meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 10px; }
+  .meta-row .btn { font-size: 13px; padding: 4px 10px; }
+  .elapsed { font-size: 12.5px; color: var(--muted); margin-left: 4px; }
+  .wait { color: var(--ink2); display: flex; align-items: center; gap: 10px; }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--rule); border-top-color: var(--red); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .err { color: var(--ink); background: var(--red-soft); border-radius: 8px; padding: 10px 14px; }
+
+  /* 输入区 */
+  .composer { padding: 8px 24px 16px; }
+  .box {
+    max-width: 760px; margin: 0 auto;
+    background: var(--surface); border: 1px solid var(--rule); border-radius: 14px;
+    box-shadow: var(--shadow);
+    display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px;
   }
-  .settings-row input:focus { border-color: var(--accent); }
-  .settings-row button {
-    background: var(--accent);
-    color: #04121b;
-    font-weight: 600;
-    border: none;
-    border-radius: 8px;
-    padding: 0 18px;
-    cursor: pointer;
-  }
-  .settings-row button:hover { background: var(--accent); filter: brightness(1.1); }
-  .settings-hint { color: var(--muted); font-size: 12px; line-height: 1.6; }
-
-  .chat {
-    flex: 1;
-    overflow-y: auto;
-    background: var(--panel);
-    border-radius: 12px;
-    padding: 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
-  }
-
-  .msg { max-width: 90%; }
-  .msg.user { align-self: flex-end; }
-  .msg.bot { align-self: flex-start; width: 100%; }
-
-  .bubble {
-    padding: 12px 14px;
-    border-radius: 12px;
-    line-height: 1.7;
-    font-size: 15px;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .msg.user .bubble { background: var(--accent); color: #04121b; }
-
-  .msg.bot .bubble {
-    background: var(--panel2);
-    border: 1px solid var(--border);
-  }
-
-  .bubble b { color: var(--green); }
-
-  .cards { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
-
-  .card {
-    background: var(--panel2);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    border-radius: 8px;
-    padding: 12px 14px;
-    font-size: 13.5px;
-    line-height: 1.6;
-  }
-  .card.law { border-left-color: var(--law); }
-  .card.case { border-left-color: var(--case); }
-
-  .card .tag {
-    display: inline-block;
-    font-size: 11.5px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 4px;
-    margin-bottom: 6px;
-  }
-  .card.law .tag { background: rgba(74, 222, 128, 0.15); color: var(--law); }
-  .card.case .tag { background: rgba(251, 191, 36, 0.15); color: var(--case); }
-
-  .card .title { font-weight: 600; margin-bottom: 4px; }
-  .card .meta { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
-  .card a { color: var(--accent); text-decoration: none; font-size: 12px; }
-  .card a:hover { text-decoration: underline; }
-
-  .section-label {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    color: var(--muted);
-    margin: 6px 0 2px;
-  }
-
-  .inputbar {
-    display: flex;
-    gap: 10px;
-    background: var(--panel);
-    border-radius: 12px;
-    padding: 10px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
-  }
-
+  .box:focus-within { border-color: var(--muted); }
   textarea {
-    flex: 1;
-    resize: none;
-    background: var(--panel2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text);
-    font: inherit;
-    font-size: 15px;
-    padding: 12px;
-    height: 48px;
-    outline: none;
+    flex: 1; resize: none; border: none; outline: none; background: transparent;
+    color: var(--ink); font: inherit; font-size: 16px; line-height: 1.6;
+    padding: 6px 0; max-height: 200px; min-height: 38px;
   }
-  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: var(--muted); }
+  textarea:focus-visible { outline: none; }
+  .box:focus-within { box-shadow: 0 0 0 3px var(--rule), var(--shadow); }
+  .send {
+    flex: none; height: 38px; padding: 0 18px; border-radius: 10px;
+    background: var(--ink); color: var(--surface); font-size: 15px; font-weight: 600;
+  }
+  .send:disabled { opacity: .35; cursor: not-allowed; }
+  .send.stop { background: var(--red); color: #fff; }
+  .hint { max-width: 760px; margin: 6px auto 0; font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 12px; }
+  .hint .over { color: var(--red); }
 
-  button {
-    font: inherit;
-    font-size: 15px;
-    font-weight: 600;
-    color: #04120b;
-    background: var(--green);
-    border: none;
-    border-radius: 8px;
-    padding: 0 22px;
-    cursor: pointer;
-    transition: transform 0.08s, background 0.15s;
-  }
-  button:hover { background: #4ade80; }
-  button:active { transform: scale(0.96); }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  /* 依据面板 */
+  .panel { background: var(--surface); border-left: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+  .panel-head { padding: 16px 20px 12px; border-bottom: 1px solid var(--rule); display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .panel-head h2 { font-family: var(--serif); font-size: 17px; }
+  .panel-head p { font-size: 13px; color: var(--muted); margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .close { display: none; font-size: 22px; line-height: 1; color: var(--muted); padding: 2px 6px; }
+  .panel-body { flex: 1; overflow-y: auto; padding: 4px 20px 24px; scroll-behavior: smooth; }
+  .panel-empty { color: var(--muted); font-size: 14px; padding: 24px 0; line-height: 1.8; }
+  .sec { margin-top: 18px; }
+  .sec > h3, .sec > summary { font-size: 14px; font-weight: 600; color: var(--ink2); margin-bottom: 10px; }
+  .sec > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; }
+  .sec > summary::-webkit-details-marker { display: none; }
+  .sec > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
+  .sec[open] > summary::before { transform: rotate(90deg); }
+  .sec .count { color: var(--muted); font-weight: 400; }
 
-  .typing::after {
-    content: "…";
-    animation: dots 1.2s steps(4, end) infinite;
+  .card { border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--surface); transition: background-color .6s, border-color .6s; }
+  .card.flash { background: var(--red-soft); border-color: var(--red); transition: none; }
+  .card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .law-name { font-family: var(--serif); font-weight: 700; font-size: 15px; }
+  .law-name span { font-weight: 400; color: var(--ink2); margin-left: 4px; }
+  .level { flex: none; font-size: 12px; color: var(--muted); border: 1px solid var(--rule); border-radius: 4px; padding: 0 6px; }
+  .law-text { font-family: var(--serif); font-size: 14.5px; line-height: 1.85; white-space: pre-line; color: var(--ink); }
+  .clamp { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+  .more { font-size: 13px; color: var(--link); margin-top: 4px; }
+  .src { font-size: 12.5px; color: var(--muted); margin-top: 8px; line-height: 1.6; }
+  .src a { margin-left: 6px; }
+
+  .case-title { font-family: var(--serif); font-weight: 700; font-size: 15px; line-height: 1.55; }
+  .case-sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+  .chip { font-size: 12px; color: var(--ink2); background: var(--paper); border-radius: 4px; padding: 1px 7px; }
+  .ruling { font-size: 14px; line-height: 1.75; color: var(--ink); }
+  .ruling b { font-weight: 600; }
+  .used { font-size: 12px; color: var(--red); margin-bottom: 4px; }
+
+  .scrim { display: none; }
+
+  /* 窄屏：依据面板改为底部弹出层 */
+  @media (max-width: 1080px) {
+    main { grid-template-columns: minmax(0, 1fr); }
+    .panel {
+      position: fixed; left: 0; right: 0; bottom: 0; height: 78dvh; z-index: 20;
+      border-left: none; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 32px rgba(0, 0, 0, .18);
+      transform: translateY(100%); transition: transform .25s ease; visibility: hidden;
+    }
+    .panel.open { transform: none; visibility: visible; }
+    .close { display: block; }
+    .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .35); z-index: 15; }
+    .scrim.open { display: block; }
   }
-  @keyframes dots {
-    0% { content: ""; }
-    25% { content: "·"; }
-    50% { content: "··"; }
-    75% { content: "···"; }
+  @media (max-width: 640px) {
+    header { padding: 8px 16px; }
+    .brand small { display: none; }
+    .thread-inner { padding: 20px 16px 8px; }
+    .composer { padding: 6px 16px 12px; }
+    .groups { grid-template-columns: minmax(0, 1fr); }
+    .intro h1 { font-size: 23px; }
+    .q { max-width: 90%; }
+    .a { padding-left: 12px; }
+    .btn-label { display: none; }
+    .hint span:first-child { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation-duration: .01ms !important; scroll-behavior: auto !important; }
   }
 
-  footer {
-    text-align: center;
-    color: var(--muted);
-    font-size: 11.5px;
-    line-height: 1.6;
+  dialog {
+    margin: auto; border: none; border-radius: 14px; padding: 22px; width: min(440px, calc(100% - 32px));
+    background: var(--surface); color: var(--ink); box-shadow: 0 12px 48px rgba(0, 0, 0, .25);
   }
+  dialog::backdrop { background: rgba(0, 0, 0, .35); }
+  dialog h2 { font-family: var(--serif); font-size: 18px; margin-bottom: 6px; }
+  dialog p { font-size: 13.5px; color: var(--ink2); line-height: 1.7; }
+  dialog input {
+    width: 100%; margin: 14px 0; font: inherit; font-size: 15px; color: var(--ink);
+    background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; outline: none;
+  }
+  dialog input:focus { border-color: var(--muted); }
+  .dlg-msg { color: var(--red) !important; margin-top: 6px; }
+  .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .dlg-actions .primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 </style>
 </head>
 <body>
-  <div class="app">
-    <header>
-      <h1>⚖️ 劳动法知识库问答</h1>
-      <div class="header-right">
-        <span class="sub">法条 · 案例 · 智能检索</span>
-        <button id="settings-btn" class="settings-btn">⚙ 设置</button>
-      </div>
-    </header>
-
-    <div class="settings" id="settings">
-      <div class="settings-row">
-        <input type="password" id="api-key" placeholder="输入你的 DeepSeek API Key（sk-...）" autocomplete="off" />
-        <button id="save-key">保存</button>
-      </div>
-      <div class="settings-hint">Key 仅保存在你的浏览器本地；每次提问时临时发送给后端调用 DeepSeek，后端不保存。可在 platform.deepseek.com 申请。</div>
+  <header>
+    <div class="brand">劳动法问答<small>回答附法条原文与官方案例</small></div>
+    <div class="actions">
+      <button class="btn" id="new-chat" title="清空当前对话"><span aria-hidden="true">＋</span><span class="btn-label">新对话</span></button>
+      <button class="btn" id="key-btn"><span class="dot" id="key-dot"></span>API Key</button>
     </div>
+  </header>
 
-    <div class="chat" id="chat">
-      <div class="msg bot">
-        <div class="bubble">你好，我是劳动法知识库助手。你可以问我劳动法相关问题，例如：
-「公司拖欠工资怎么办？」「试用期最长多久？」「公司没签劳动合同要赔钱吗？」</div>
+  <main>
+    <div class="col">
+      <div class="thread" id="thread"><div class="thread-inner" id="list"></div></div>
+      <div class="composer">
+        <div class="box">
+          <textarea id="input" rows="1" maxlength="600" placeholder="描述你遇到的用工问题" aria-label="输入问题"></textarea>
+          <button class="send" id="send" disabled>提问</button>
+        </div>
+        <div class="hint"><span>Enter 发送，Shift + Enter 换行</span><span id="count"></span></div>
       </div>
     </div>
 
-    <div class="inputbar">
-      <textarea id="input" placeholder="输入你的问题，按 Ctrl+Enter 发送"></textarea>
-      <button id="send">发送</button>
-    </div>
+    <aside class="panel" id="panel" aria-label="回答依据">
+      <div class="panel-head">
+        <div><h2>回答依据</h2><p id="panel-q">提问后，这里显示回答引用的法条原文和相似案例。</p></div>
+        <button class="close" id="panel-close" aria-label="关闭">×</button>
+      </div>
+      <div class="panel-body" id="panel-body"></div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+  </main>
 
-    <footer>本工具仅供学习参考，不构成法律意见。法条与案例来自公开渠道，请以官方发布为准。</footer>
-  </div>
+  <dialog id="key-dlg">
+    <h2>DeepSeek API Key</h2>
+    <p>Key 只保存在当前浏览器，提问时随请求发给本地后端调用 DeepSeek，后端不保存。可在 platform.deepseek.com 申请。如果本地 .env 已配置 Key，这里可以留空。</p>
+    <p class="dlg-msg" id="dlg-msg" hidden></p>
+    <input type="password" id="key-input" placeholder="sk-..." autocomplete="off" />
+    <div class="dlg-actions">
+      <button class="btn" id="key-cancel">取消</button>
+      <button class="btn primary" id="key-save">保存</button>
+    </div>
+  </dialog>
 
 <script>
 (() => {
   "use strict";
-  const chat = document.getElementById("chat");
-  const input = document.getElementById("input");
-  const sendBtn = document.getElementById("send");
+  const $ = id => document.getElementById(id);
+  const list = $("list"), thread = $("thread"), input = $("input"), sendBtn = $("send");
+  const panel = $("panel"), panelBody = $("panel-body"), panelQ = $("panel-q"), scrim = $("scrim");
+  const MAX_LEN = 500, KEY_STORE = "deepseek_api_key", HIST_STORE = "lawqa_history";
 
-  // 设置 / API Key（BYOK：只存在浏览器本地）
-  const settings = document.getElementById("settings");
-  const settingsBtn = document.getElementById("settings-btn");
-  const apiKeyInput = document.getElementById("api-key");
-  const saveKeyBtn = document.getElementById("save-key");
-  const KEY_STORAGE = "deepseek_api_key";
-  let apiKey = localStorage.getItem(KEY_STORAGE) || "";
-  apiKeyInput.value = apiKey;
+  const EXAMPLES = [
+    ["入职与合同", ["入职一个月了公司还没签劳动合同，有什么后果？", "试用期发现员工不符合录用条件，能直接辞退吗？"]],
+    ["工资与工时", ["周末加班公司只给调休不给加班费，合法吗？", "公司拖欠两个月工资，员工可以怎么维权？"]],
+    ["解除与离职", ["员工严重违反规章制度，公司解除劳动合同要注意什么？", "怀孕了，公司要辞退我怎么办？"]],
+    ["社保与工伤", ["员工自愿放弃缴纳社保并签了承诺书，公司还有责任吗？", "上下班路上发生交通事故算工伤吗？"]],
+  ];
 
-  settingsBtn.addEventListener("click", () => {
-    settings.classList.toggle("open");
-    if (settings.classList.contains("open")) apiKeyInput.focus();
-  });
-  saveKeyBtn.addEventListener("click", () => {
-    apiKey = apiKeyInput.value.trim();
-    localStorage.setItem(KEY_STORAGE, apiKey);
-    saveKeyBtn.textContent = "已保存";
-    setTimeout(() => (saveKeyBtn.textContent = "保存"), 1500);
-  });
+  // ---------- 本地存储（失败时静默降级） ----------
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+  let apiKey = store.get(KEY_STORE) || "";
+  let msgs = [];           // [{q, data?, error?, ms?}]
+  try { msgs = JSON.parse(store.get(HIST_STORE) || "[]"); } catch { msgs = []; }
+  let active = -1, busy = null, stats = null;
 
-  function esc(s) {
-    return String(s).replace(/[&<>"']/g, c =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const save = () => store.set(HIST_STORE, JSON.stringify(msgs.filter(m => m.data).slice(-20)));
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const short = name => name.replace(/^中华人民共和国/, "");
+
+  // 阿拉伯数字条号 -> 中文条号（与法条库一致）
+  function cn(n) {
+    const d = "零一二三四五六七八九";
+    if (n < 10) return d[n];
+    if (n < 20) return "十" + (n % 10 ? d[n % 10] : "");
+    if (n < 100) return d[Math.floor(n / 10)] + "十" + (n % 10 ? d[n % 10] : "");
+    const h = Math.floor(n / 100), r = n % 100;
+    if (!r) return d[h] + "百";
+    if (r < 10) return d[h] + "百零" + d[r];
+    return d[h] + "百" + (r < 20 ? "一" : "") + cn(r);
   }
+  const lawKey = (law, art) => short(law) + "#" + (/^\d+$/.test(art) ? cn(+art) : art);
+  const isRefusal = d => /只专注于劳动法/.test(d.answer || "");
 
-  // 极简 markdown：加粗 + 换行
-  function fmt(text) {
-    return esc(text)
-      .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
-  }
-
-  function addUser(q) {
-    const div = document.createElement("div");
-    div.className = "msg user";
-    div.innerHTML = `<div class="bubble">${esc(q)}</div>`;
-    chat.appendChild(div);
-    chat.scrollTop = chat.scrollHeight;
-  }
-
-  function addBot() {
-    const div = document.createElement("div");
-    div.className = "msg bot";
-    div.innerHTML = `<div class="bubble typing">正在检索并生成回答</div>`;
-    chat.appendChild(div);
-    chat.scrollTop = chat.scrollHeight;
-    return div.querySelector(".bubble");
-  }
-
-  function renderAnswer(bubble, data) {
-    bubble.classList.remove("typing");
-    let html = `<div class="bubble">${fmt(data.answer || "")}</div>`;
-
-    if (data.laws && data.laws.length) {
-      html += `<div class="section-label">📖 相关法条</div><div class="cards">`;
-      for (const l of data.laws) {
-        html += `<div class="card law">
-          <span class="tag">${esc(l.level || "法条")}</span>
-          <div class="title">《${esc(l.law)}》第 ${esc(l.article)} 条</div>
-          <div style="white-space: pre-line">${esc(l.text)}</div>`;
-        if (l.source) html += `<div class="meta" style="margin-top:6px">${l.effective ? "施行：" + esc(l.effective) + " · " : ""}来源：<a href="${esc(l.source)}" target="_blank">官方原文</a></div>`;
-        html += `</div>`;
-      }
-      html += `</div>`;
+  // ---------- 回答渲染：段落 / 小标题 / 列表 / 引用标记 ----------
+  function analyze(data) {
+    const keys = new Map((data.laws || []).map((l, i) => [lawKey(l.law, l.article), i]));
+    const cited = [];   // 按回答中出现顺序
+    const re = /《([^》]{2,40})》第([零一二三四五六七八九十百\d]+)条/g;
+    for (const m of (data.answer || "").matchAll(re)) {
+      const i = keys.get(lawKey(m[1], m[2]));
+      if (i !== undefined && !cited.includes(i)) cited.push(i);
     }
-
-    if (data.cases && data.cases.length) {
-      html += `<div class="section-label">⚖️ 相似案例</div><div class="cards">`;
-      for (const c of data.cases) {
-        html += `<div class="card case">
-          <span class="tag">案例</span>
-          <div class="title">${esc(c.title)}</div>
-          ${c.case_no || c.court ? `<div class="meta">${[c.case_no, c.court].filter(Boolean).map(esc).join(" · ")}</div>` : ""}
-          ${c.tags && c.tags.length ? `<div class="meta">方向：${c.tags.map(esc).join(" · ")}</div>` : ""}
-          ${c.ruling ? `<div><b>${c.gist ? "裁判要点" : (c.result ? "裁判结果" : "法院意见")}：</b>${esc(c.ruling)}</div>` : ""}`;
-        if (c.source) {
-          // 来源格式：发布机构（日期）+ 原文链接，链接单独可点
-          const url = (c.source.match(/https?:\/\/\S+/) || [""])[0];
-          const org = c.source.replace(url, "").trim();
-          html += `<div class="meta" style="margin-top:6px">来源：${esc(org)}${url ? ` <a href="${esc(url)}" target="_blank">原文链接</a>` : ""}</div>`;
-        }
-        html += `</div>`;
-      }
-      html += `</div>`;
-    }
-
-    bubble.outerHTML = html;
-    chat.scrollTop = chat.scrollHeight;
+    const usedCases = (data.cases || []).map((c, i) => (data.answer || "").includes(c.title) ? i : -1).filter(i => i >= 0);
+    return { keys, cited, usedCases };
   }
 
-  async function send() {
-    const q = input.value.trim();
-    if (!q) return;
-    if (!apiKey) {
-      alert("请先在「设置」里输入你的 DeepSeek API Key");
-      settings.classList.add("open");
-      apiKeyInput.focus();
+  function inline(s, data, info, mi) {
+    let h = esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+    h = h.replace(/《([^》]{2,40})》第([零一二三四五六七八九十百\d]+)条/g, (all, law, art) => {
+      const i = info.keys.get(lawKey(law, art));
+      return i === undefined ? all : `<a href="#" class="cite" data-m="${mi}" data-law="${i}" title="查看条文原文">${all}</a>`;
+    });
+    (data.cases || []).forEach((c, i) => {
+      const t = esc(c.title);
+      if (t && h.includes(t)) h = h.split(t).join(`<a href="#" class="cite" data-m="${mi}" data-case="${i}" title="查看案例">${t}</a>`);
+    });
+    return h;
+  }
+
+  function renderAnswer(data, info, mi) {
+    const out = [];
+    let para = [], listTag = null;
+    const flushPara = () => { if (para.length) out.push(`<p>${para.join("<br>")}</p>`); para = []; };
+    const closeList = () => { if (listTag) out.push(`</${listTag}>`); listTag = null; };
+    const openList = tag => { if (listTag !== tag) { closeList(); out.push(`<${tag}>`); listTag = tag; } };
+    for (const raw of (data.answer || "").split("\n")) {
+      const line = raw.trim();
+      let m;
+      if (!line) { flushPara(); continue; }  // 空行不打断列表，避免编号被重置
+      if ((m = line.match(/^#{1,4}\s+(.+)$/)) || (m = line.match(/^\*\*([^*]+)\*\*[:：]?$/))) {
+        flushPara(); closeList(); out.push(`<h3>${inline(m[1], data, info, mi)}</h3>`);
+      } else if ((m = line.match(/^[-*•]\s+(.+)$/))) {
+        flushPara(); openList("ul"); out.push(`<li>${inline(m[1], data, info, mi)}</li>`);
+      } else if ((m = line.match(/^(\d+)[.、．]\s*(.+)$/))) {
+        flushPara(); openList("ol"); out.push(`<li value="${m[1]}">${inline(m[2], data, info, mi)}</li>`);
+      } else if (/^本回答仅供参考/.test(line)) {
+        flushPara(); closeList(); out.push(`<p class="note">${esc(line)}</p>`);
+      } else {
+        closeList(); para.push(inline(line, data, info, mi));
+      }
+    }
+    flushPara(); closeList();
+    return out.join("");
+  }
+
+  // ---------- 对话列表 ----------
+  function intro() {
+    const desc = stats
+      ? `回答依据 ${stats.laws} 条劳动法律法规原文和 ${stats.cases} 个法院、人社部门公开发布的案例，并标明出处，方便你核对。`
+      : "回答依据劳动法律法规原文和法院、人社部门公开发布的案例，并标明出处，方便你核对。";
+    return `<section class="intro">
+      <h1>遇到劳动用工问题，先看法条和判例怎么说</h1>
+      <p>${desc}</p>
+      <div class="groups">${EXAMPLES.map(([g, qs]) => `<div class="group"><h2>${g}</h2>${qs.map(q => `<button class="ask">${esc(q)}</button>`).join("")}</div>`).join("")}</div>
+    </section>`;
+  }
+
+  function msgHTML(m, i) {
+    let a;
+    if (m.pending) {
+      a = `<div class="wait"><span class="spinner"></span>正在检索法条和案例并生成回答<span class="elapsed" data-elapsed></span></div>`;
+    } else if (m.error) {
+      a = `<div class="err">${esc(m.error)}</div><div class="meta-row"><button class="btn" data-retry="${i}">重试</button></div>`;
+    } else {
+      const info = analyze(m.data);
+      const refuse = isRefusal(m.data);
+      const nLaw = (m.data.laws || []).length, nCase = (m.data.cases || []).length;
+      a = `<div class="answer">${renderAnswer(m.data, info, i)}</div>
+        <div class="meta-row">
+          <button class="btn" data-copy="${i}">复制回答</button>
+          ${refuse ? "" : `<button class="btn" data-show="${i}">查看依据（${info.cited.length ? `引用法条 ${info.cited.length}` : `检索法条 ${nLaw}`}，案例 ${nCase}）</button>`}
+          ${m.ms ? `<span class="elapsed">用时 ${(m.ms / 1000).toFixed(0)} 秒</span>` : ""}
+        </div>`;
+    }
+    return `<div class="q">${esc(m.q)}</div><div class="a${i === active ? " active" : ""}" id="a${i}">${a}</div>`;
+  }
+
+  function render() {
+    list.innerHTML = msgs.length ? msgs.map(msgHTML).join("") : intro();
+    renderPanel();
+  }
+
+  // ---------- 依据面板 ----------
+  function lawCard(l, i, mi) {
+    const long = (l.text || "").length > 160;
+    return `<div class="card" id="law-${mi}-${i}">
+      <div class="card-top"><div class="law-name">${esc(short(l.law))}<span>第${esc(l.article)}条</span></div>${l.level ? `<span class="level">${esc(l.level)}</span>` : ""}</div>
+      <div class="law-text${long ? " clamp" : ""}">${esc(l.text)}</div>
+      ${long ? `<button class="more" data-expand>展开全文</button>` : ""}
+      ${l.source ? `<div class="src">${l.effective ? `施行日期 ${esc(l.effective)}` : ""}<a href="${esc(l.source)}" target="_blank" rel="noopener">${/flk\.npc\.gov\.cn/.test(l.source) ? "国家法律法规数据库原文" : "官方原文"}</a></div>` : ""}
+    </div>`;
+  }
+
+  function caseCard(c, i, mi, used) {
+    const url = (c.source || "").match(/https?:\/\/\S+/)?.[0] || "";
+    const org = (c.source || "").replace(url, "").trim();
+    const label = c.gist ? "裁判要点" : (c.result ? "裁判结果" : "法院意见");
+    const long = (c.ruling || "").length > 110;
+    return `<div class="card" id="case-${mi}-${i}">
+      ${used ? `<div class="used">回答中引用</div>` : ""}
+      <div class="case-title">${esc(c.title)}</div>
+      ${c.case_no || c.court ? `<div class="case-sub">${[c.court, c.case_no].filter(Boolean).map(esc).join("　")}</div>` : ""}
+      ${c.tags?.length ? `<div class="chips">${c.tags.map(t => `<span class="chip">${esc(t)}</span>`).join("")}</div>` : ""}
+      ${c.ruling ? `<div class="ruling${long ? " clamp" : ""}"><b>${label}：</b>${esc(c.ruling)}</div>${long ? `<button class="more" data-expand>展开</button>` : ""}` : ""}
+      ${c.source ? `<div class="src">${esc(org)}${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">查看原文</a>` : ""}</div>` : ""}
+    </div>`;
+  }
+
+  function renderPanel() {
+    const m = msgs[active];
+    if (!m || !m.data || isRefusal(m.data)) {
+      panelQ.textContent = "提问后，这里显示回答引用的法条原文和相似案例。";
+      panelBody.innerHTML = `<div class="panel-empty">${m && m.data ? "这个问题不属于劳动法范围，没有对应的法条和案例。" : "每条回答都会附上检索到的法条和案例。回答中标红的法条或案例名可以点击，在这里查看原文。"}</div>`;
       return;
     }
-    addUser(q);
-    input.value = "";
-    sendBtn.disabled = true;
-    const bubble = addBot();
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
-        body: JSON.stringify({ question: q, top_k: 5 }),
-      });
-      const data = await res.json();
-      if (res.status === 401) {
-        bubble.classList.remove("typing");
-        bubble.textContent = "⚠️ 请先在「设置」里配置有效的 API Key";
-        settings.classList.add("open");
-      } else if (!res.ok || data.error) {
-        bubble.classList.remove("typing");
-        bubble.textContent = "⚠️ " + (data.error || "请求出错，请稍后重试");
-      } else {
-        renderAnswer(bubble, data);
-      }
-    } catch (e) {
-      bubble.classList.remove("typing");
-      bubble.textContent = "⚠️ 请求失败：" + e.message;
-    } finally {
-      sendBtn.disabled = false;
-      input.focus();
-    }
+    const d = m.data, info = analyze(d), laws = d.laws || [], cases = d.cases || [];
+    const rest = laws.map((_, i) => i).filter(i => !info.cited.includes(i));
+    panelQ.textContent = m.q;
+    let h = "";
+    if (info.cited.length) h += `<section class="sec"><h3>回答引用的法条 <span class="count">${info.cited.length}</span></h3>${info.cited.map(i => lawCard(laws[i], i, active)).join("")}</section>`;
+    if (cases.length) h += `<section class="sec"><h3>参考案例 <span class="count">${cases.length}</span></h3>${cases.map((c, i) => caseCard(c, i, active, info.usedCases.includes(i))).join("")}</section>`;
+    else h += `<section class="sec"><h3>参考案例</h3><div class="panel-empty" style="padding:4px 0">案例库中暂无与这个问题直接对应的官方案例。</div></section>`;
+    if (rest.length) h += `<details class="sec"${info.cited.length ? "" : " open"}><summary>${info.cited.length ? "其他检索到的法条" : "检索到的法条"} <span class="count">${rest.length}</span></summary>${rest.map(i => lawCard(laws[i], i, active)).join("")}</details>`;
+    panelBody.innerHTML = h;
+    panelBody.scrollTop = 0;
   }
 
-  sendBtn.addEventListener("click", send);
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+  function setActive(i) {
+    if (active === i) return;
+    document.querySelector(".a.active")?.classList.remove("active");
+    active = i;
+    $("a" + i)?.classList.add("active");
+    renderPanel();
+  }
+
+  const narrow = () => matchMedia("(max-width: 1080px)").matches;
+  function openSheet() { if (narrow()) { panel.classList.add("open"); scrim.classList.add("open"); } }
+  function closeSheet() { panel.classList.remove("open"); scrim.classList.remove("open"); }
+
+  function focusCard(id) {
+    openSheet();
+    const el = document.getElementById(id);
+    if (!el) return;
+    const det = el.closest("details");
+    if (det) det.open = true;
+    el.scrollIntoView({ block: "center" });
+    el.classList.add("flash");
+    setTimeout(() => el.classList.remove("flash"), 900);
+  }
+
+  // ---------- 提问 ----------
+  async function ask(q, at) {
+    q = q.trim();
+    if (!q || busy) return;
+    if (q.length > MAX_LEN) return;
+    const i = at ?? msgs.length;
+    msgs[i] = { q, pending: true };
+    input.value = ""; resize(); updateCount();
+    render();
+    $("a" + i).previousElementSibling.scrollIntoView({ block: "start" });
+
+    const ctrl = new AbortController(), t0 = Date.now();
+    busy = { ctrl, timer: setInterval(() => {
+      const el = list.querySelector("[data-elapsed]");
+      if (el) el.textContent = `${Math.floor((Date.now() - t0) / 1000)} 秒`;
+    }, 1000) };
+    setSendState();
+
+    let m;
+    try {
+      const headers = { "Content-Type": "application/json" };
+      if (apiKey) headers["X-API-Key"] = apiKey;
+      const res = await fetch("/api/chat", { method: "POST", headers, body: JSON.stringify({ question: q, top_k: 5 }), signal: ctrl.signal });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        m = { q, error: "没有可用的 API Key。请在右上角「API Key」中填写 DeepSeek Key 后重试。" };
+        openKey("需要先填写 DeepSeek API Key 才能生成回答。");
+      } else if (!res.ok || data.error) {
+        m = { q, error: data.error || `服务返回错误（${res.status}），请稍后重试。` };
+      } else {
+        m = { q, data, ms: Date.now() - t0 };
+      }
+    } catch (e) {
+      m = { q, error: e.name === "AbortError" ? "已停止生成。" : "连接不到本地服务。请确认已运行 python app.py 后重试。" };
+    }
+    clearInterval(busy.timer);
+    busy = null;
+    msgs[i] = m;
+    if (m.data) active = i;
+    save();
+    render();
+    setSendState();
+    $("a" + i)?.previousElementSibling.scrollIntoView({ block: "start" });
+    if (m.data && !isRefusal(m.data) && !narrow()) panelBody.scrollTop = 0;
+    input.focus();
+  }
+
+  function setSendState() {
+    if (busy) {
+      sendBtn.disabled = false; sendBtn.textContent = "停止"; sendBtn.classList.add("stop");
+    } else {
+      const len = input.value.trim().length;
+      sendBtn.disabled = !len || len > MAX_LEN; sendBtn.textContent = "提问"; sendBtn.classList.remove("stop");
+    }
+  }
+  function updateCount() {
+    const n = input.value.trim().length;
+    $("count").innerHTML = n > MAX_LEN - 100 ? `<span class="${n > MAX_LEN ? "over" : ""}">${n} / ${MAX_LEN}</span>` : "";
+    setSendState();
+  }
+  function resize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 200) + "px"; }
+
+  sendBtn.addEventListener("click", () => busy ? busy.ctrl.abort() : ask(input.value));
+  input.addEventListener("input", () => { resize(); updateCount(); });
+  input.addEventListener("keydown", e => {
+    // 输入法选词时的 Enter 不发送
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault();
-      send();
+      if (!busy) ask(input.value);
     }
   });
+
+  // ---------- 事件委托 ----------
+  list.addEventListener("click", e => {
+    const t = e.target.closest("button, a.cite");
+    if (!t) return;
+    if (t.classList.contains("cite")) e.preventDefault();
+    if (t.classList.contains("ask")) return ask(t.textContent);
+    if (t.dataset.retry) return ask(msgs[+t.dataset.retry].q, +t.dataset.retry);
+    if (t.dataset.copy) {
+      const text = msgs[+t.dataset.copy].data.answer;
+      const done = () => { t.textContent = "已复制"; setTimeout(() => (t.textContent = "复制回答"), 1500); };
+      navigator.clipboard?.writeText(text).then(done, () => fallbackCopy(text, done)) ?? fallbackCopy(text, done);
+      return;
+    }
+    if (t.dataset.show) { setActive(+t.dataset.show); openSheet(); return; }
+    if (t.classList.contains("cite")) {
+      const mi = +t.dataset.m;
+      setActive(mi);
+      focusCard(t.dataset.law !== undefined ? `law-${mi}-${t.dataset.law}` : `case-${mi}-${t.dataset.case}`);
+    }
+  });
+  list.addEventListener("click", e => {
+    const a = e.target.closest(".a");
+    if (a && !e.target.closest("button, a") && msgs[+a.id.slice(1)]?.data) setActive(+a.id.slice(1));
+  });
+  panelBody.addEventListener("click", e => {
+    const t = e.target.closest("[data-expand]");
+    if (!t) return;
+    const body = t.previousElementSibling;
+    const open = body.classList.toggle("clamp");
+    t.textContent = open ? (t.textContent.includes("全文") ? "展开全文" : "展开") : "收起";
+  });
+  function fallbackCopy(text, done) {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); done(); } catch {}
+    ta.remove();
+  }
+
+  $("panel-close").addEventListener("click", closeSheet);
+  scrim.addEventListener("click", closeSheet);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+
+  $("new-chat").addEventListener("click", () => {
+    if (busy) busy.ctrl.abort();
+    msgs = []; active = -1; store.del(HIST_STORE); closeSheet(); render(); input.focus();
+  });
+
+  // ---------- API Key ----------
+  const dlg = $("key-dlg"), keyInput = $("key-input"), dlgMsg = $("dlg-msg");
+  const syncDot = () => { $("key-dot").classList.toggle("on", !!apiKey); $("key-btn").title = apiKey ? "已填写 API Key" : "未填写 API Key（将使用本地 .env 中的 Key）"; };
+  function openKey(msg) {
+    keyInput.value = apiKey;
+    dlgMsg.hidden = !msg; dlgMsg.textContent = msg || "";
+    dlg.showModal(); keyInput.focus();
+  }
+  $("key-btn").addEventListener("click", () => openKey());
+  $("key-cancel").addEventListener("click", () => dlg.close());
+  $("key-save").addEventListener("click", () => {
+    apiKey = keyInput.value.trim();
+    apiKey ? store.set(KEY_STORE, apiKey) : store.del(KEY_STORE);
+    syncDot(); dlg.close();
+  });
+  keyInput.addEventListener("keydown", e => { if (e.key === "Enter" && !e.isComposing) $("key-save").click(); });
+
+  // ---------- 启动 ----------
+  syncDot();
+  active = msgs.length - 1;
+  render();
+  if (msgs.length) requestAnimationFrame(() => (thread.scrollTop = thread.scrollHeight));
+  fetch("/api/health").then(r => r.json()).then(s => { stats = s; if (!msgs.length) render(); }).catch(() => {});
+  input.focus();
 })();
 </script>
 </body>
