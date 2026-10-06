@@ -7,22 +7,31 @@
 输入：data/_cases_raw/*.txt 或 *.md（每个文件一个案例）
 输出：data/cases.json（一个 JSON 数组）
 
-字段标注格式（任选其一，可混用）：
+字段标注格式（任选其一，可混用；文件中出现【】标记时只认【】，避免正文里的「xx：」被误判）：
     【标题】案例名称         或    标题：案例名称
     【案号】（2011）xx字第xx号
     【法院】xx人民法院
     【关键词】劳动合同 单方解除
     【案情】……（可多行）
-    【裁判要点】……
+    【裁判结果】……          处理结果 / 裁决结果
+    【裁判要点】……          裁判要旨 / 裁判摘要
+    【案例分析】……          裁判理由
+    【典型意义】……
+    【标签】竞业限制 保密与商业秘密   （空格分隔，取值见 case_tags.TAGS）
     【来源】https://……
 
 说明：
   - 每个文件 = 一个案例；同一文件内多次出现同一标签会自动合并。
   - 标题缺失时用文件名兜底；以 "_" 或 "README" 开头的文件会被跳过。
+  - 大方向 scenario 由标签推出（case_tags.primary_scenario）；未写【标签】时按标题和关键词自动识别。
 """
 import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from case_tags import TAGS, primary_scenario, tags_of  # noqa: E402
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 RAW_DIR = DATA / "_cases_raw"
@@ -35,39 +44,18 @@ FIELD_MAP = {
     "case_no": "case_no", "案号": "case_no", "案件编号": "case_no", "文书案号": "case_no",
     "summary": "summary", "案情": "summary", "案情摘要": "summary", "基本案情": "summary",
     "案件事实": "summary", "案情简介": "summary",
-    "ruling": "ruling", "裁判要点": "ruling", "裁判要旨": "ruling", "裁判结果": "ruling",
-    "要点": "ruling", "裁判理由": "ruling",
+    "result": "result", "裁判结果": "result", "处理结果": "result", "裁决结果": "result",
+    "gist": "gist", "裁判要点": "gist", "裁判要旨": "gist", "裁判摘要": "gist", "要点": "gist",
+    "analysis": "analysis", "案例分析": "analysis", "裁判理由": "analysis",
+    "significance": "significance", "典型意义": "significance",
     "keywords": "keywords", "关键词": "keywords",
+    "tags": "tags", "标签": "tags",
     "source": "source", "来源": "source", "出处": "source", "链接": "source",
 }
 
 # 标记行：以【标签】开头，或 "标签：" 开头
 MARKER_RE = re.compile(r"^\s*(?:【([^】]+)】|([^：:\n]{1,16})[:：])\s*(.*)$")
-
-# 场景标签规则：按顺序匹配（命中即归类）。labels 必须与 llm.py 改写提示中的核心场景一致
-SCENARIO_RULES = [
-    ("加班费", ["加班", "996", "超时", "延长工作时间", "隐形加班", "工时"]),
-    ("未签劳动合同", ["未签订书面劳动合同", "未签劳动合同", "未签书面", "二倍工资", "补签", "倒签"]),
-    ("女职工保护", ["女职工", "孕期", "产假", "哺乳期", "生育津贴", "三期"]),
-    ("试用期", ["试用期"]),
-    ("违法解除", ["违法解除", "末位淘汰", "不能胜任", "单方解除", "无固定期限劳动合同"]),
-    ("工伤认定", ["工伤", "上下班途中"]),
-    ("拖欠工资", ["拖欠", "恶意欠薪", "拒不支付劳动报酬", "欠薪"]),
-    ("社会保险", ["社会保险", "社保", "养老保险", "抚恤金", "生育保险"]),
-    ("经济补偿金", ["经济补偿", "协商一致解除", "期满终止", "劳动合同期满"]),
-    ("竞业限制", ["竞业限制", "商业秘密"]),
-    ("劳务派遣", ["劳务派遣", "派遣", "同工同酬"]),
-    ("年休假", ["年休假"]),
-]
-
-
-def classify_scenario(text):
-    """根据「标题 + 关键词」文本自动归类场景；无法归类返回「其他」。"""
-    for scenario, patterns in SCENARIO_RULES:
-        for p in patterns:
-            if p in text:
-                return scenario
-    return "其他"
+BRACKET_RE = re.compile(r"^\s*【[^】]+】", re.M)
 
 
 def read_text(path: Path) -> str:
@@ -83,12 +71,13 @@ def read_text(path: Path) -> str:
 def parse_case(text: str) -> dict:
     fields = {}
     cur = None
+    bracket_only = bool(BRACKET_RE.search(text))
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
             continue
         m = MARKER_RE.match(line)
-        if m and (m.group(1) or m.group(2)):
+        if m and (m.group(1) or (m.group(2) and not bracket_only)):
             label = (m.group(1) or m.group(2)).strip()
             rest = (m.group(3) or "").strip()
             key = FIELD_MAP.get(label)
@@ -106,8 +95,15 @@ def parse_case(text: str) -> dict:
         text = "\n".join(p for p in parts if p).strip()
         if text:
             out[k] = text
-    # 场景标签：根据【标题】+【关键词】自动归类
-    out["scenario"] = classify_scenario(" ".join([out.get("title", ""), out.get("keywords", "")]))
+    tags = out.get("tags", "").split() or tags_of(" ".join([out.get("title", ""), out.get("keywords", "")]))
+    unknown = [t for t in tags if t not in TAGS]
+    if unknown:
+        raise ValueError(f"未知标签 {unknown}（可选值见 case_tags.TAGS）")
+    out["tags"] = tags
+    out["scenario"] = primary_scenario(tags)
+    # 界面展示用：有裁判要点用要点，否则用裁判结果；早年公报案例两者都没有，截取案例分析开头
+    analysis = out.get("analysis", "")
+    out["ruling"] = out.get("gist") or out.get("result") or (analysis[:200] + "……" if len(analysis) > 200 else analysis)
     return out
 
 
@@ -124,10 +120,14 @@ def main():
 
     cases = []
     for p in files:
-        parsed = parse_case(read_text(p))
+        try:
+            parsed = parse_case(read_text(p))
+        except ValueError as e:
+            print(f"[error] {p.name}：{e}")
+            raise SystemExit(1)
         if not parsed.get("title"):
             parsed["title"] = p.stem
-        if not any(k in parsed for k in ("summary", "ruling", "case_no")):
+        if not any(parsed.get(k) for k in ("summary", "ruling", "case_no")):
             print(f"[skip] 未识别到有效字段，跳过：{p.name}")
             continue
         cases.append(parsed)

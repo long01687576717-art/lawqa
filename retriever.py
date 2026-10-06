@@ -6,6 +6,7 @@ from pathlib import Path
 import jieba
 import numpy as np
 
+import case_tags
 import lawmeta
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -68,6 +69,7 @@ class KnowledgeBase:
 
         self.law_bm25 = BM25([_tokenize(t) for t in self.law_docs])
         self.case_bm25 = BM25([_tokenize(t) for t in self.case_docs])
+        self.case_idf = case_tags.tag_idf(self.cases)
 
         self.embedder = None
         self.law_vecs = None
@@ -90,10 +92,7 @@ class KnowledgeBase:
 
     @staticmethod
     def _case_text(c):
-        return " ".join(
-            str(c.get(k, ""))
-            for k in ("title", "summary", "ruling", "keywords")
-        )
+        return case_tags.case_doc_text(c)
 
     # ---- 向量 ----
     def _init_embedder(self):
@@ -125,8 +124,6 @@ class KnowledgeBase:
 
     # ---- 检索 ----
     RRF_K = 60  # Reciprocal Rank Fusion 平滑参数
-    MIN_CASE_SCORE = 0.8  # 案例最低相关度阈值：最高分低于此值说明该场景下无合适案例
-    MAX_CASES = 3         # 案例最多返回条数（硬性 [:3]）
 
     def _rrf_fuse(self, *score_arrays, top_n=30, k=5):
         """RRF 融合：把多个检索方法的排序结果合并成单一排名。
@@ -145,23 +142,8 @@ class KnowledgeBase:
             return []
         return [i for i, _ in sorted(rrf.items(), key=lambda kv: kv[1], reverse=True)[:k]]
 
-    def _top_cases(self, scores, scenario, k, min_score):
-        """场景过滤 → 按得分排序取前 k → 最高分低于阈值则返回空。"""
-        if scores is None or len(scores) == 0:
-            return []
-        if scenario:
-            cand = [i for i in range(len(self.cases)) if self.cases[i].get("scenario") == scenario]
-        else:
-            cand = list(range(len(self.cases)))
-        if not cand:
-            return []
-        cand_sorted = sorted(cand, key=lambda i: float(scores[i]), reverse=True)[:k]
-        if float(scores[cand_sorted[0]]) < min_score:
-            return []
-        return cand_sorted
-
     def search(self, query, scenario=None, k=5, extra_query=None):
-        """返回 (laws, cases)。法条取 RRF top-k（+ 口语扩展路合并 + 关联条文）；案例按场景过滤 + BM25 排序 + 阈值淘汰。"""
+        """返回 (laws, cases)。法条取 RRF top-k（+ 口语扩展路合并 + 关联条文）；案例按方向标签筛选 + BM25 排序 + 阈值淘汰。"""
         q = _tokenize(query)
         law_idx = self._rrf_fuse(
             self.law_bm25.scores(q),
@@ -180,10 +162,11 @@ class KnowledgeBase:
             )
             laws = lawmeta.merge_two_routes(laws, [self.laws[i] for i in extra_idx])
 
-        if scenario == "无":
-            case_idx = []
-        else:
-            case_idx = self._top_cases(self.case_bm25.scores(q), scenario, self.MAX_CASES, self.MIN_CASE_SCORE)
+        # 案例：用「改写词 + 原问题口语扩展」识别方向标签并打分（改写为「无」时也能靠标签找到案例）
+        case_query = f"{query} {extra_query or ''}".strip()
+        case_idx = case_tags.select_cases(
+            self.cases, self.case_bm25.scores(_tokenize(case_query)), case_query, scenario, idf=self.case_idf
+        )
         # 关联条文联动召回：把引用 / 被引用的条文一并带出（不挤占原 top-k）
         laws = lawmeta.expand_with_citations(laws, self.laws, self.citation_index, self.law_mapping)
         return laws, [self.cases[i] for i in case_idx]

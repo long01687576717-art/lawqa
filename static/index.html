@@ -340,9 +340,15 @@
         html += `<div class="card case">
           <span class="tag">案例</span>
           <div class="title">${esc(c.title)}</div>
-          ${c.case_no ? `<div class="meta">${esc(c.case_no)}${c.court ? " · " + esc(c.court) : ""}</div>` : ""}
-          ${c.ruling ? `<div><b>裁判要点：</b>${esc(c.ruling)}</div>` : ""}`;
-        if (c.source) html += `<div class="meta" style="margin-top:6px">来源：<a href="${esc(c.source)}" target="_blank">${esc(c.source)}</a></div>`;
+          ${c.case_no || c.court ? `<div class="meta">${[c.case_no, c.court].filter(Boolean).map(esc).join(" · ")}</div>` : ""}
+          ${c.tags && c.tags.length ? `<div class="meta">方向：${c.tags.map(esc).join(" · ")}</div>` : ""}
+          ${c.ruling ? `<div><b>${c.gist ? "裁判要点" : (c.result ? "裁判结果" : "法院意见")}：</b>${esc(c.ruling)}</div>` : ""}`;
+        if (c.source) {
+          // 来源格式：发布机构（日期）+ 原文链接，链接单独可点
+          const url = (c.source.match(/https?:\/\/\S+/) || [""])[0];
+          const org = c.source.replace(url, "").trim();
+          html += `<div class="meta" style="margin-top:6px">来源：${esc(org)}${url ? ` <a href="${esc(url)}" target="_blank">原文链接</a>` : ""}</div>`;
+        }
         html += `</div>`;
       }
       html += `</div>`;

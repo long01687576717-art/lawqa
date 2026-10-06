@@ -13,6 +13,7 @@ import jieba
 import streamlit as st
 from openai import OpenAI
 
+import case_tags
 import lawmeta
 from llm import rewrite_query
 
@@ -22,8 +23,6 @@ DATA_DIR = BASE_DIR / "data"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-chat"
 TOP_K = 5
-MAX_CASES = 3          # 案例最多返回条数（硬性 [:3]）
-MIN_CASE_SCORE = 0.8   # 案例最低相关度阈值：最高分低于此值说明该场景下无合适案例
 
 _CSS = """<style>
 /* ===== 全局：LegalTech 浅色主题（深灰蓝，非纯黑） ===== */
@@ -141,7 +140,7 @@ SYSTEM_PROMPT = """你是一个专业的中国劳动法助手。你只能根据�
 
 回答劳动法问题时，遵循以下要求：
 1. 只依据【参考资料】中给出的法条和案例作答，严禁编造法条序号、条文内容或案号。
-2. 引用法条时写清楚法律名称和第几条；引用案例时写清楚案例名称。
+2. 引用法条时写清楚法律名称和第几条；引用案例时照抄【参考案例】中给出的案例名称（编号后、冒号前的文字），不得根据案情自拟或改写案例名称。
 3. 若参考资料不足以回答，请如实说明「资料不足」，不要强行给出结论。
 4. 语言专业、简洁、通俗，用中文，适当分点，不要输出与问题无关的内容。
 5. 最后加一句：本回答仅供参考，不构成法律意见。
@@ -210,13 +209,14 @@ def build_index():
     law_mapping = lawmeta.load_law_mapping()
     laws = lawmeta.attach_notes(laws)
     law_docs = [f"{l.get('law', '')} 第{l.get('article', '')}条 {l.get('text', '')}" for l in laws]
-    case_docs = [" ".join(str(c.get(k, "")) for k in ("title", "summary", "ruling", "keywords")) for c in cases]
+    case_docs = [case_tags.case_doc_text(c) for c in cases]
     law_bm25 = BM25([_tokenize(t) for t in law_docs])
     case_bm25 = BM25([_tokenize(t) for t in case_docs])
-    return laws, cases, law_bm25, case_bm25, citation_index, law_mapping
+    case_idf = case_tags.tag_idf(cases)
+    return laws, cases, law_bm25, case_bm25, citation_index, law_mapping, case_idf
 
 
-def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, law_mapping=None, scenario=None, k=TOP_K, extra_query=None):
+def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, law_mapping=None, scenario=None, k=TOP_K, extra_query=None, case_idf=None):
     q = _tokenize(query)
     law_idx = _top(law_bm25.scores(q), k)
     result_laws = [laws[i] for i in law_idx]
@@ -225,11 +225,9 @@ def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, law_map
         eq = _tokenize(extra_query)
         extra_idx = _top(law_bm25.scores(eq), k)
         result_laws = lawmeta.merge_two_routes(result_laws, [laws[i] for i in extra_idx])
-    if scenario == "无":
-        case_idx = []
-    else:
-        # 场景过滤 → 得分排序 → [:MAX_CASES] → 最高分低于阈值则返回空
-        case_idx = _top_cases(case_bm25.scores(q), cases, scenario, MAX_CASES, MIN_CASE_SCORE)
+    # 案例：用「改写词 + 原问题口语扩展」识别方向标签并打分（改写为「无」时也能靠标签找到案例）
+    case_query = f"{query} {extra_query or ''}".strip()
+    case_idx = case_tags.select_cases(cases, case_bm25.scores(_tokenize(case_query)), case_query, scenario, idf=case_idf)
     # 关联条文联动召回：把引用 / 被引用的条文一并带出（不挤占原 top-k）
     result_laws = lawmeta.expand_with_citations(result_laws, laws, citation_index, law_mapping)
     return result_laws, [cases[i] for i in case_idx]
@@ -239,21 +237,6 @@ def _top(scores, k):
     if not scores:
         return []
     return sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k]
-
-
-def _top_cases(scores, cases, scenario, k, min_score):
-    if not scores:
-        return []
-    if scenario:
-        cand = [i for i in range(len(cases)) if cases[i].get("scenario") == scenario]
-    else:
-        cand = list(range(len(cases)))
-    if not cand:
-        return []
-    cand_sorted = sorted(cand, key=lambda i: scores[i], reverse=True)[:k]
-    if scores[cand_sorted[0]] < min_score:
-        return []
-    return cand_sorted
 
 
 # ---- DeepSeek ----
@@ -271,10 +254,7 @@ def _build_prompt(question, laws, cases):
     parts += ["", "【参考案例】"]
     if cases:
         for i, c in enumerate(cases, 1):
-            parts.append(
-                f"{i}. {c.get('title', '')}（{c.get('case_no', '')}）："
-                f"{c.get('summary', '')} 裁判要点：{c.get('ruling', '')}"
-            )
+            parts.append(case_tags.case_brief(i, c))
     else:
         parts.append("（无）")
     return "\n".join(parts)
@@ -329,8 +309,13 @@ def _render_refs(laws, cases, answer=None):
                 if c.get("case_no"):
                     meta = c["case_no"] + ((" · " + c["court"]) if c.get("court") else "")
                     st.caption(meta)
+                if c.get("tags"):
+                    st.caption("方向：" + " · ".join(c["tags"]))
                 if c.get("ruling"):
-                    st.markdown(f"裁判要点：{c.get('ruling', '')}")
+                    label = "裁判要点" if c.get("gist") else ("裁判结果" if c.get("result") else "法院意见")
+                    st.markdown(f"{label}：{c.get('ruling', '')}")
+                if c.get("source"):
+                    st.caption(f"来源：{c['source']}")
 
 
 st.set_page_config(page_title="劳动法知识库问答", page_icon="⚖️", layout="centered")
@@ -368,7 +353,7 @@ if not api_key:
     st.stop()
 
 # 加载索引（缓存）
-laws, cases, law_bm25, case_bm25, citation_index, law_mapping = build_index()
+laws, cases, law_bm25, case_bm25, citation_index, law_mapping, case_idf = build_index()
 
 # 聊天历史
 if "messages" not in st.session_state:
@@ -399,11 +384,11 @@ if prompt:
                     oral_query = rw.get("oral_query") or ""
                 except Exception:
                     scenario, keywords, oral_query = None, prompt, ""  # 改写失败则用原问题检索
-                r_laws, r_cases = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, law_mapping, scenario=scenario, extra_query=oral_query)
+                r_laws, r_cases = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, law_mapping, scenario=scenario, extra_query=oral_query, case_idf=case_idf)
                 answer = _generate(client, prompt, r_laws, r_cases)
                 # 改进3：若模型判断资料不足，扩大召回（k=15）二次检索再生成
                 if "资料不足" in answer:
-                    r_laws2, r_cases2 = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, law_mapping, scenario=scenario, k=15, extra_query=oral_query)
+                    r_laws2, r_cases2 = search(keywords, laws, cases, law_bm25, case_bm25, citation_index, law_mapping, scenario=scenario, k=15, extra_query=oral_query, case_idf=case_idf)
                     answer = _generate(client, prompt, r_laws2, r_cases2)
                     r_laws, r_cases = r_laws2, r_cases2
             shown_keywords = keywords

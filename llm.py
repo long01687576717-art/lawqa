@@ -3,6 +3,7 @@ import json
 import re
 
 import config
+from case_tags import case_brief
 from synonyms import expand_query
 
 # 按 api_key 缓存客户端，支持多用户各自携带自己的 key（BYOK）
@@ -12,7 +13,7 @@ SYSTEM_PROMPT = """你是一个专业的中国劳动法助手。你只能根据�
 
 回答劳动法问题时，遵循以下要求：
 1. 只依据【参考资料】中给出的法条和案例作答，严禁编造法条序号、条文内容或案号。
-2. 引用法条时写清楚法律名称和第几条；引用案例时写清楚案例名称。
+2. 引用法条时写清楚法律名称和第几条；引用案例时照抄【参考案例】中给出的案例名称（编号后、冒号前的文字），不得根据案情自拟或改写案例名称。
 3. 若参考资料不足以回答，请如实说明「资料不足」，不要强行给出结论。
 4. 语言专业、简洁、通俗，用中文，适当分点，不要输出与问题无关的内容。
 5. 最后加一句：本回答仅供参考，不构成法律意见。
@@ -58,10 +59,7 @@ def build_prompt(question, laws, cases):
     parts += ["", "【参考案例】"]
     if cases:
         for i, c in enumerate(cases, 1):
-            parts.append(
-                f"{i}. {c.get('title', '')}（{c.get('case_no', '')}）："
-                f"{c.get('summary', '')} 裁判要点：{c.get('ruling', '')}"
-            )
+            parts.append(case_brief(i, c))
     else:
         parts.append("（无）")
 
