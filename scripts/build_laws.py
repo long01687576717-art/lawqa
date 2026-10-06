@@ -60,10 +60,14 @@ RULES = [
     ("企业经济性裁减人员规定", "部门规章"),
 ]
 
-# 规范性文件：条目写作「59．……」，入库时条号统一记为中文「第五十九条」，正文逐字不变；原文同样手工留档
+# 规范性文件：条目写作「59．……」或「一、……」，入库时条号统一记为中文「第五十九条」「第一条」，
+# 正文逐字不变；原文同样手工留档
 NOTICES = [
     ("关于贯彻执行〈中华人民共和国劳动法〉若干问题的意见", "规范性文件"),
+    ("人力资源社会保障部关于职工全年月平均工作时间和工资折算问题的通知", "规范性文件"),
 ]
+# 以「一、二、三」分条（而非「1．2．3．」）的规范性文件
+CN_ITEM_NOTICES = {"人力资源社会保障部关于职工全年月平均工作时间和工资折算问题的通知"}
 
 ARTICLE_RE = re.compile(r"^第([一二三四五六七八九十百零]+)条[\s　]*(.*)$")
 CHAPTER_RE = re.compile(r"^第[一二三四五六七八九十百零]+[章节][\s　]*\S*")
@@ -175,7 +179,10 @@ def to_cn(n):
 
 
 def parse_items(text, law, level, source, effective):
-    """规范性文件：按「N．」切分条目；「一、」为章，「（一）」为节。"""
+    """规范性文件：按「N．」切分条目，「一、」为章，「（一）」为节；
+    CN_ITEM_NOTICES 中的文件按「一、」切分条目（条目标题并入条文正文）。"""
+    if law in CN_ITEM_NOTICES:
+        return parse_cn_items(text, law, level, source, effective)
     articles, chapter, section, cur = [], "", "", None
     for line in text.split("\n"):
         line = line.strip()
@@ -192,6 +199,20 @@ def parse_items(text, law, level, source, effective):
             section = line
             continue
         if cur is not None and line:
+            cur["text"] += "\n" + line
+    return articles
+
+
+def parse_cn_items(text, law, level, source, effective):
+    articles, cur = [], None
+    for line in text.split("\n"):
+        line = line.strip()
+        m = re.match(r"^([一二三四五六七八九十]+)、(.*)$", line)
+        if m:
+            cur = {"law": law, "level": level, "chapter": "", "article": m.group(1),
+                   "text": m.group(2).strip(), "source": source, "effective": effective}
+            articles.append(cur)
+        elif cur is not None and line:
             cur["text"] += "\n" + line
     return articles
 

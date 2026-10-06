@@ -313,7 +313,8 @@ def _law_md(l):
     """法条展示：名称 + 层级 + 条号，条文按款换行（Markdown 需行尾两个空格才换行）。"""
     level = f"（{l['level']}）" if l.get("level") else ""
     text = l.get("text", "").replace("\n", "  \n")
-    return f"**《{l.get('law', '')}》{level}第{l.get('article', '')}条**  \n{text}"
+    note = f"\n\n> 调整说明：{l['note'].removeprefix('注意：')}" if l.get("note") else ""
+    return f"**《{l.get('law', '')}》{level}第{l.get('article', '')}条**  \n{text}{note}"
 
 
 def _render_refs(laws, cases, answer=None):
