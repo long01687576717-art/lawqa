@@ -23,6 +23,7 @@ DATA_DIR = BASE_DIR / "data"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-chat"
 TOP_K = 5
+K_OTHER = 4  # 配套法规（核心法律以外）每次取的条数，与 retriever.KnowledgeBase.K_OTHER 一致
 
 _CSS = """<style>
 /* ===== 全局：LegalTech 浅色主题（深灰蓝，非纯黑） ===== */
@@ -150,7 +151,8 @@ SYSTEM_PROMPT = """你是一个专业的中国劳动法助手。你只能根据�
 9. 如果某条法条附带了「调整说明」（形如"注意：……"），必须如实转述该说明，不得把已被后续法律法规调整的过时规定当作现行规定回答。
 10. 问题涉及知识库未收录的专门法规或地方规定时，可以说明相关法规名称并建议用户查阅，但不得输出该法规的具体内容（条号、适用要件、天数、比例、金额等），不得用不完整规定冒充完整结论。
 11. 只能引用【参考资料】中实际出现的条文；需要的条文在参考资料中未提供时，如实说明「相关条文未检索到」，不得凭记忆编造条号或条文内容；涉及库外法规时只写法规名称，不写条号。法条附带的调整说明中已写明的内容（包括其中的法规名称和条号）可以如实转述，本条限制的是参考资料之外、凭记忆补充的内容。
-12. 全文使用中文，不得夹杂英文。"""
+12. 全文使用中文，不得夹杂英文。
+13. 【参考法条】中法规名称后的括号标注了层级（法律、行政法规、司法解释、部门规章）。配套法规（实施条例、司法解释、部门规章等）对法律作出具体规定（天数、比例、期限、计算标准、适用条件）时，应与法律条文一并引用；不同层级的规定不一致时，以上位法为准并说明。引用时写出法规全称和条号。"""
 
 # ---- 分词 + BM25（纯 Python，无 numpy / fastembed 依赖）----
 def _tokenize(text):
@@ -218,12 +220,16 @@ def build_index():
 
 def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, law_mapping=None, scenario=None, k=TOP_K, extra_query=None, case_idf=None):
     q = _tokenize(query)
-    law_idx = _top(law_bm25.scores(q), k)
+    # 分层检索：核心法律（劳动法、劳动合同法）与配套法规分开排名，避免配套条文挤占核心条文
+    core = [i for i, l in enumerate(laws) if lawmeta.is_core(l.get("law", ""))]
+    other = [i for i, l in enumerate(laws) if not lawmeta.is_core(l.get("law", ""))]
+    scores = law_bm25.scores(q)
+    law_idx = _top(scores, k, core) + _top(scores, K_OTHER, other)
     result_laws = [laws[i] for i in law_idx]
-    # 口语扩展路：独立检索，去重合并（避免稀释主检索词）
+    # 口语扩展路：独立检索（只查核心法律），去重合并（避免稀释主检索词）
     if extra_query and extra_query != query:
         eq = _tokenize(extra_query)
-        extra_idx = _top(law_bm25.scores(eq), k)
+        extra_idx = _top(law_bm25.scores(eq), k, core)
         result_laws = lawmeta.merge_two_routes(result_laws, [laws[i] for i in extra_idx])
     # 案例：用「改写词 + 原问题口语扩展」识别方向标签并打分（改写为「无」时也能靠标签找到案例）
     case_query = f"{query} {extra_query or ''}".strip()
@@ -233,10 +239,11 @@ def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, law_map
     return result_laws, [cases[i] for i in case_idx]
 
 
-def _top(scores, k):
+def _top(scores, k, subset=None):
     if not scores:
         return []
-    return sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k]
+    cand = range(len(scores)) if subset is None else subset
+    return sorted(cand, key=lambda i: scores[i], reverse=True)[:k]
 
 
 # ---- DeepSeek ----
@@ -245,7 +252,8 @@ def _build_prompt(question, laws, cases):
     if laws:
         for i, l in enumerate(laws, 1):
             tag = "（关联条文）" if l.get('_cited') else ""
-            line = f"{i}. 《{l.get('law', '')}》第{l.get('article', '')}条{tag}：{l.get('text', '')}"
+            level = f"（{l['level']}）" if l.get('level') else ""
+            line = f"{i}. 《{l.get('law', '')}》{level}第{l.get('article', '')}条{tag}：{l.get('text', '')}"
             if l.get('note'):
                 line += f"【调整说明】{l.get('note')}"
             parts.append(line)
@@ -289,6 +297,13 @@ def _is_cited(law, answer):
     return any(c in answer for c in candidates)
 
 
+def _law_md(l):
+    """法条展示：名称 + 层级 + 条号，条文按款换行（Markdown 需行尾两个空格才换行）。"""
+    level = f"（{l['level']}）" if l.get("level") else ""
+    text = l.get("text", "").replace("\n", "  \n")
+    return f"**《{l.get('law', '')}》{level}第{l.get('article', '')}条**  \n{text}"
+
+
 def _render_refs(laws, cases, answer=None):
     if laws:
         cited = [l for l in laws if _is_cited(l, answer)] if answer else laws
@@ -296,11 +311,11 @@ def _render_refs(laws, cases, answer=None):
         if cited:
             with st.expander("📖 参考法条"):
                 for l in cited:
-                    st.markdown(f"**《{l.get('law', '')}》第{l.get('article', '')}条**  \n{l.get('text', '')}")
+                    st.markdown(_law_md(l))
         if uncited:
             with st.expander("🗂️ 其他检索结果（未被引用）"):
                 for l in uncited:
-                    st.markdown(f"**《{l.get('law', '')}》第{l.get('article', '')}条**  \n{l.get('text', '')}")
+                    st.markdown(_law_md(l))
     # 渲染"相似案例"前先检查长度：为 0 时彻底隐藏标题，不硬凑
     if cases:
         with st.expander("⚖️ 相似案例"):

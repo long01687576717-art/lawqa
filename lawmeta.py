@@ -13,6 +13,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
+# 核心法律：检索时单独排名，保证不被配套法规（实施条例、司法解释、规章等）挤占
+CORE_LAWS = ("中华人民共和国劳动法", "中华人民共和国劳动合同法")
+
 _DIGITS = {'零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
            '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
 
@@ -78,12 +81,18 @@ def attach_notes(laws, notes=None):
     return out
 
 
-def expand_with_citations(top_laws, all_laws, index=None, mapping=None, max_extra=4):
+def is_core(law_name):
+    return law_name in CORE_LAWS
+
+
+def expand_with_citations(top_laws, all_laws, index=None, mapping=None, max_extra=4, max_cross=2):
     """把新旧法对应条文（优先）与引用关系关联条文（次之）追加到 top_laws 后面。
 
-    - 对应条文来自 law_mapping.json（劳动法 -> 劳动合同法），标记 _mapped=True；
-    - 引用关系来自 citation_index.json（双向），标记 _cited=True。
-    两者合计追加不超过 max_extra 条，均不挤占原 top-k。
+    - 对应条文来自 law_mapping.json（劳动法 -> 劳动合同法 / 现行细化规定），标记 _mapped=True；
+    - 引用关系来自 citation_index.json（双向），标记 _cited=True：
+      先追加同一层级内的关联（核心法律之间、配套法规之间），合计不超过 max_extra 条；
+      再追加跨层级关联（核心法律 <-> 配套法规），另计不超过 max_cross 条，避免挤占核心法条之间的关联。
+    均不挤占原 top-k。
     """
     if index is None:
         index = load_citation_index()
@@ -109,18 +118,37 @@ def expand_with_citations(top_laws, all_laws, index=None, mapping=None, max_extr
         result.append(d)
         return len(result) >= len(top_laws) + max_extra
 
+    keys = [law_key(l.get('law', ''), cn_to_arabic(l.get('article', ''))) for l in top_laws]
+
+    def _same_tier(a, b):
+        return is_core(a.split(':')[0]) == is_core(b.split(':')[0])
+
     # 1. 新旧法对应条文（优先）
-    for l in top_laws:
-        key = law_key(l.get('law', ''), cn_to_arabic(l.get('article', '')))
+    full = False
+    for key in keys:
         for rel in mapping.get(key, []):
             if _append(rel, '_mapped'):
-                return result
-    # 2. 引用关系关联条文（次之）
-    for l in top_laws:
-        key = law_key(l.get('law', ''), cn_to_arabic(l.get('article', '')))
+                full = True
+                break
+        if full:
+            break
+    # 2. 同层级引用关联（次之）
+    if not full:
+        for key in keys:
+            for rel in index.get(key, []):
+                if _same_tier(key, rel) and _append(rel, '_cited'):
+                    full = True
+                    break
+            if full:
+                break
+    # 3. 跨层级引用关联（另计名额）
+    cap = len(result) + max_cross
+    for key in keys:
         for rel in index.get(key, []):
-            if _append(rel, '_cited'):
+            if len(result) >= cap:
                 return result
+            if not _same_tier(key, rel):
+                _append(rel, '_cited')
     return result
 
 

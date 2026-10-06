@@ -325,10 +325,10 @@
       html += `<div class="section-label">📖 相关法条</div><div class="cards">`;
       for (const l of data.laws) {
         html += `<div class="card law">
-          <span class="tag">法条</span>
+          <span class="tag">${esc(l.level || "法条")}</span>
           <div class="title">《${esc(l.law)}》第 ${esc(l.article)} 条</div>
-          <div>${esc(l.text)}</div>`;
-        if (l.source) html += `<div class="meta" style="margin-top:6px">来源：<a href="${esc(l.source)}" target="_blank">${esc(l.source)}</a></div>`;
+          <div style="white-space: pre-line">${esc(l.text)}</div>`;
+        if (l.source) html += `<div class="meta" style="margin-top:6px">${l.effective ? "施行：" + esc(l.effective) + " · " : ""}来源：<a href="${esc(l.source)}" target="_blank">官方原文</a></div>`;
         html += `</div>`;
       }
       html += `</div>`;

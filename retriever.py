@@ -68,6 +68,10 @@ class KnowledgeBase:
         self.case_docs = [self._case_text(c) for c in self.cases]
 
         self.law_bm25 = BM25([_tokenize(t) for t in self.law_docs])
+        # 分层检索：核心法律（劳动法、劳动合同法）与配套法规分开排名，避免配套条文挤占核心条文
+        is_core = np.array([l.get("law") in lawmeta.CORE_LAWS for l in self.laws])
+        self.core_idx = np.where(is_core)[0]
+        self.other_idx = np.where(~is_core)[0]
         self.case_bm25 = BM25([_tokenize(t) for t in self.case_docs])
         self.case_idf = case_tags.tag_idf(self.cases)
 
@@ -123,19 +127,24 @@ class KnowledgeBase:
         return (vecs @ qv.T).ravel()
 
     # ---- 检索 ----
-    RRF_K = 60  # Reciprocal Rank Fusion 平滑参数
+    RRF_K = 60   # Reciprocal Rank Fusion 平滑参数
+    K_OTHER = 4  # 配套法规（核心法律以外）每次取的条数
+    ORAL_SCOPE = "core"  # 口语扩展路的检索范围：core 只查核心法律，all 查全部
 
-    def _rrf_fuse(self, *score_arrays, top_n=30, k=5):
+    def _rrf_fuse(self, *score_arrays, top_n=30, k=5, subset=None):
         """RRF 融合：把多个检索方法的排序结果合并成单一排名。
 
         每个方法取前 top_n 名，第 rank 名（从 1 开始）贡献 1/(K+rank) 分，
-        累加到对应文档，最终按总分降序取前 k 名。
+        累加到对应文档，最终按总分降序取前 k 名。subset 给定时只在这些下标内排名。
         """
         rrf = {}
         for scores in score_arrays:
             if scores is None or len(scores) == 0:
                 continue
-            order = np.argsort(-scores)[:top_n]
+            if subset is None:
+                order = np.argsort(-scores)[:top_n]
+            else:
+                order = subset[np.argsort(-scores[subset])][:top_n]
             for rank, idx in enumerate(order):
                 rrf[idx] = rrf.get(idx, 0.0) + 1.0 / (self.RRF_K + rank + 1)
         if not rrf:
@@ -145,11 +154,9 @@ class KnowledgeBase:
     def search(self, query, scenario=None, k=5, extra_query=None):
         """返回 (laws, cases)。法条取 RRF top-k（+ 口语扩展路合并 + 关联条文）；案例按方向标签筛选 + BM25 排序 + 阈值淘汰。"""
         q = _tokenize(query)
-        law_idx = self._rrf_fuse(
-            self.law_bm25.scores(q),
-            self._vector_scores(query, self.law_vecs),
-            k=k,
-        )
+        bm25_q, vec_q = self.law_bm25.scores(q), self._vector_scores(query, self.law_vecs)
+        law_idx = self._rrf_fuse(bm25_q, vec_q, k=k, subset=self.core_idx)
+        law_idx += self._rrf_fuse(bm25_q, vec_q, k=self.K_OTHER, subset=self.other_idx)
         laws = [self.laws[i] for i in law_idx]
 
         # 口语扩展路：独立检索，去重合并（避免稀释主检索词）
@@ -159,6 +166,7 @@ class KnowledgeBase:
                 self.law_bm25.scores(eq),
                 self._vector_scores(extra_query, self.law_vecs),
                 k=k,
+                subset=self.core_idx if self.ORAL_SCOPE == "core" else None,
             )
             laws = lawmeta.merge_two_routes(laws, [self.laws[i] for i in extra_idx])
 
