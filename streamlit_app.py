@@ -7,6 +7,7 @@
 """
 import json
 import math
+import re
 from pathlib import Path
 
 import jieba
@@ -285,19 +286,25 @@ def _generate(client, question, laws, cases):
 
 
 # ---- 界面 ----
-def _is_cited(law, answer):
-    """判断法条是否被回答引用（条号出现在回答文本中）。"""
-    if not answer:
-        return False
-    art_cn = law.get('article', '')
-    art_ar = lawmeta.cn_to_arabic(art_cn)
-    candidates = []
-    if art_cn:
-        candidates.append(f"第{art_cn}条")
-        candidates.append(f"{art_cn}条")
-    if art_ar is not None:
-        candidates.append(f"第{art_ar}条")
-    return any(c in answer for c in candidates)
+CITE_RE = re.compile(r"《([^》]{2,40})》第([零一二三四五六七八九十百\d]+)条")
+
+
+def _short(name):
+    return name.replace("中华人民共和国", "", 1)
+
+
+def _art_num(art):
+    return int(art) if art.isdigit() else lawmeta.cn_to_arabic(art)
+
+
+def _citations(answer):
+    """回答中「《法规名》第X条」形式的引用，返回 {(法规简称, 条号数字)}。"""
+    return {(_short(m.group(1)), _art_num(m.group(2))) for m in CITE_RE.finditer(answer or "")}
+
+
+def _is_cited(law, cites):
+    """按法规名 + 条号精确判断法条是否被回答引用。"""
+    return (_short(law.get("law", "")), _art_num(law.get("article", ""))) in cites
 
 
 def _law_md(l):
@@ -308,17 +315,15 @@ def _law_md(l):
 
 
 def _render_refs(laws, cases, answer=None):
-    if laws:
-        cited = [l for l in laws if _is_cited(l, answer)] if answer else laws
-        uncited = [l for l in laws if l not in cited]
-        if cited:
-            with st.expander("📖 参考法条"):
-                for l in cited:
-                    st.markdown(_law_md(l))
-        if uncited:
-            with st.expander("🗂️ 其他检索结果（未被引用）"):
-                for l in uncited:
-                    st.markdown(_law_md(l))
+    if answer and "只专注于劳动法" in answer:
+        return  # 拒答时不展示法条和案例
+    # 只展示回答中引用的法条，未引用的检索结果不展示
+    cites = _citations(answer)
+    cited = [l for l in (laws or []) if _is_cited(l, cites)] if answer else (laws or [])
+    if cited:
+        with st.expander("📖 参考法条"):
+            for l in cited:
+                st.markdown(_law_md(l))
     # 渲染"相似案例"前先检查长度：为 0 时彻底隐藏标题，不硬凑
     if cases:
         with st.expander("⚖️ 相似案例"):

@@ -391,11 +391,11 @@
     } else {
       const info = analyze(m.data);
       const refuse = isRefusal(m.data);
-      const nLaw = (m.data.laws || []).length, nCase = (m.data.cases || []).length;
+      const nCase = (m.data.cases || []).length;
       a = `<div class="answer">${renderAnswer(m.data, info, i)}</div>
         <div class="meta-row">
           <button class="btn" data-copy="${i}">复制回答</button>
-          ${refuse ? "" : `<button class="btn" data-show="${i}">查看依据（${info.cited.length ? `引用法条 ${info.cited.length}` : `检索法条 ${nLaw}`}，案例 ${nCase}）</button>`}
+          ${refuse ? "" : `<button class="btn" data-show="${i}">查看依据（引用法条 ${info.cited.length}，案例 ${nCase}）</button>`}
           ${m.ms ? `<span class="elapsed">用时 ${(m.ms / 1000).toFixed(0)} 秒</span>` : ""}
         </div>`;
     }
@@ -441,13 +441,11 @@
       return;
     }
     const d = m.data, info = analyze(d), laws = d.laws || [], cases = d.cases || [];
-    const rest = laws.map((_, i) => i).filter(i => !info.cited.includes(i));
     panelQ.textContent = m.q;
     let h = "";
     if (info.cited.length) h += `<section class="sec"><h3>回答引用的法条 <span class="count">${info.cited.length}</span></h3>${info.cited.map(i => lawCard(laws[i], i, active)).join("")}</section>`;
     if (cases.length) h += `<section class="sec"><h3>参考案例 <span class="count">${cases.length}</span></h3>${cases.map((c, i) => caseCard(c, i, active, info.usedCases.includes(i))).join("")}</section>`;
     else h += `<section class="sec"><h3>参考案例</h3><div class="panel-empty" style="padding:4px 0">案例库中暂无与这个问题直接对应的官方案例。</div></section>`;
-    if (rest.length) h += `<details class="sec"${info.cited.length ? "" : " open"}><summary>${info.cited.length ? "其他检索到的法条" : "检索到的法条"} <span class="count">${rest.length}</span></summary>${rest.map(i => lawCard(laws[i], i, active)).join("")}</details>`;
     panelBody.innerHTML = h;
     panelBody.scrollTop = 0;
   }
