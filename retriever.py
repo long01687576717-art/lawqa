@@ -131,6 +131,7 @@ class KnowledgeBase:
     RRF_K = 60   # Reciprocal Rank Fusion 平滑参数
     K_OTHER = 4  # 配套法规（核心法律以外）每次取的条数
     ORAL_SCOPE = "core"  # 口语扩展路的检索范围：core 只查核心法律，all 查全部
+    ORAL_OTHER = 2       # 口语扩展路另取的配套法规条数（与核心法律分开排名，0 表示不取）
 
     def _rrf_fuse(self, *score_arrays, top_n=30, k=5, subset=None):
         """RRF 融合：把多个检索方法的排序结果合并成单一排名。
@@ -170,6 +171,10 @@ class KnowledgeBase:
                 subset=self.core_idx if self.ORAL_SCOPE == "core" else None,
             )
             laws = lawmeta.merge_two_routes(laws, [self.laws[i] for i in extra_idx])
+            if self.ORAL_OTHER:  # 口语词换算出的配套法规术语（如「孕检→妊娠测试」）单独排名补充
+                other = self._rrf_fuse(self.law_bm25.scores(eq), self._vector_scores(extra_query, self.law_vecs),
+                                       k=self.ORAL_OTHER, subset=self.other_idx)
+                laws = lawmeta.merge_two_routes(laws, [self.laws[i] for i in other], max_extra=self.ORAL_OTHER)
 
         # 案例：用「改写词 + 原问题口语扩展」识别方向标签并打分（改写为「无」时也能靠标签找到案例）
         case_query = f"{query} {extra_query or ''}".strip()

@@ -25,6 +25,7 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-chat"
 TOP_K = 5
 K_OTHER = 4  # 配套法规（核心法律以外）每次取的条数，与 retriever.KnowledgeBase.K_OTHER 一致
+ORAL_OTHER = 2  # 口语扩展路另取的配套法规条数，与 retriever.KnowledgeBase.ORAL_OTHER 一致
 
 _CSS = """<style>
 /* ===== 全局：LegalTech 浅色主题（深灰蓝，非纯黑） ===== */
@@ -153,7 +154,7 @@ SYSTEM_PROMPT = """你是一个专业的中国劳动法助手。你只能根据�
 10. 问题涉及知识库未收录的专门法规或地方规定时，可以说明相关法规名称并建议用户查阅，但不得输出该法规的具体内容（条号、适用要件、天数、比例、金额等），不得用不完整规定冒充完整结论。
 11. 只能引用【参考资料】中实际出现的条文；需要的条文在参考资料中未提供时，如实说明「相关条文未检索到」，不得凭记忆编造条号或条文内容；涉及库外法规时只写法规名称，不写条号。法条附带的调整说明中已写明的内容（包括其中的法规名称和条号）可以如实转述，本条限制的是参考资料之外、凭记忆补充的内容。
 12. 全文使用中文，不得夹杂英文。
-13. 【参考法条】中法规名称后的括号标注了层级（法律、行政法规、司法解释、部门规章）。配套法规（实施条例、司法解释、部门规章等）对法律作出具体规定（天数、比例、期限、计算标准、适用条件）时，应与法律条文一并引用；不同层级的规定不一致时，以上位法为准并说明。引用时写出法规全称和条号。"""
+13. 【参考法条】中法规名称后的括号标注了层级（法律、行政法规、司法解释、部门规章、规范性文件）。配套法规（实施条例、司法解释、部门规章、规范性文件等）对法律作出具体规定（天数、比例、期限、计算标准、适用条件）时，应与法律条文一并引用；不同层级的规定不一致时，以上位法为准并说明；1994、1995 年发布的劳动部规章和规范性文件，与之后施行的法律（如劳动合同法）规定不一致时，以法律为准。引用时写出法规全称和条号。"""
 
 # ---- 分词 + BM25（纯 Python，无 numpy / fastembed 依赖）----
 def _tokenize(text):
@@ -228,11 +229,12 @@ def search(query, laws, cases, law_bm25, case_bm25, citation_index=None, law_map
     scores = law_bm25.scores(q)
     law_idx = _top(scores, k, core) + _top(scores, K_OTHER, other)
     result_laws = [laws[i] for i in law_idx]
-    # 口语扩展路：独立检索（只查核心法律），去重合并（避免稀释主检索词）
+    # 口语扩展路：独立检索，去重合并（避免稀释主检索词）；核心法律与配套法规分开排名
     if extra_query and extra_query != query:
-        eq = _tokenize(extra_query)
-        extra_idx = _top(law_bm25.scores(eq), k, core)
-        result_laws = lawmeta.merge_two_routes(result_laws, [laws[i] for i in extra_idx])
+        eq_scores = law_bm25.scores(_tokenize(extra_query))
+        result_laws = lawmeta.merge_two_routes(result_laws, [laws[i] for i in _top(eq_scores, k, core)])
+        result_laws = lawmeta.merge_two_routes(result_laws, [laws[i] for i in _top(eq_scores, ORAL_OTHER, other)],
+                                               max_extra=ORAL_OTHER)
     # 案例：用「改写词 + 原问题口语扩展」识别方向标签并打分（改写为「无」时也能靠标签找到案例）
     case_query = f"{query} {extra_query or ''}".strip()
     cq = _tokenize(case_query)
@@ -286,7 +288,7 @@ def _generate(client, question, laws, cases):
 
 
 # ---- 界面 ----
-CITE_RE = re.compile(r"《([^》]{2,40})》第([零一二三四五六七八九十百\d]+)条")
+CITE_RE = re.compile(r"《([^》]{2,40})》(?:（[^）]{1,8}）)?第([零一二三四五六七八九十百\d]+)条")
 
 
 def _short(name):

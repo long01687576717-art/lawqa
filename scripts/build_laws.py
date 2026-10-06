@@ -37,10 +37,14 @@ FLK_LAWS = [
     ("中华人民共和国社会保险法", "法律"),
     ("中华人民共和国劳动争议调解仲裁法", "法律"),
     ("中华人民共和国就业促进法", "法律"),
+    ("中华人民共和国妇女权益保障法", "法律"),
     ("中华人民共和国劳动合同法实施条例", "行政法规"),
     ("工伤保险条例", "行政法规"),
     ("女职工劳动保护特别规定", "行政法规"),
     ("职工带薪年休假条例", "行政法规"),
+    ("住房公积金管理条例", "行政法规"),
+    ("全国年节及纪念日放假办法", "行政法规"),
+    ("国务院关于职工工作时间的规定", "行政法规"),
     ("最高人民法院关于审理劳动争议案件适用法律问题的解释（一）", "司法解释"),
     ("最高人民法院关于审理劳动争议案件适用法律问题的解释（二）", "司法解释"),
 ]
@@ -52,10 +56,18 @@ RULES = [
     ("最低工资规定", "部门规章"),
     ("企业职工带薪年休假实施办法", "部门规章"),
     ("劳务派遣暂行规定", "部门规章"),
+    ("企业职工患病或非因工负伤医疗期规定", "部门规章"),
+    ("企业经济性裁减人员规定", "部门规章"),
+]
+
+# 规范性文件：条目写作「59．……」，入库时条号统一记为中文「第五十九条」，正文逐字不变；原文同样手工留档
+NOTICES = [
+    ("关于贯彻执行〈中华人民共和国劳动法〉若干问题的意见", "规范性文件"),
 ]
 
 ARTICLE_RE = re.compile(r"^第([一二三四五六七八九十百零]+)条[\s　]*(.*)$")
 CHAPTER_RE = re.compile(r"^第[一二三四五六七八九十百零]+[章节][\s　]*\S*")
+ITEM_RE = re.compile(r"^(\d+)[．.](.*)$")
 
 
 # ---------- 抓取 ----------
@@ -147,6 +159,43 @@ def parse_articles(text, law, level, source, effective):
     return articles
 
 
+def to_cn(n):
+    """阿拉伯数字 -> 中文条号（1~199），如 59 -> 五十九、105 -> 一百零五、110 -> 一百一十。"""
+    d = "零一二三四五六七八九"
+    if n >= 100:
+        r = n % 100
+        if r == 0:
+            return "一百"
+        if r < 10:
+            return "一百零" + d[r]
+        return "一百" + ("一" if r < 20 else "") + to_cn(r)
+    if n < 10:
+        return d[n]
+    return ("" if n < 20 else d[n // 10]) + "十" + (d[n % 10] if n % 10 else "")
+
+
+def parse_items(text, law, level, source, effective):
+    """规范性文件：按「N．」切分条目；「一、」为章，「（一）」为节。"""
+    articles, chapter, section, cur = [], "", "", None
+    for line in text.split("\n"):
+        line = line.strip()
+        m = ITEM_RE.match(line)
+        if m:
+            cur = {"law": law, "level": level, "chapter": "　".join(x for x in (chapter, section) if x),
+                   "article": to_cn(int(m.group(1))), "text": m.group(2).strip(), "source": source, "effective": effective}
+            articles.append(cur)
+            continue
+        if re.match(r"^[一二三四五六七八九十]+、", line):
+            chapter, section = line, ""
+            continue
+        if re.match(r"^（[一二三四五六七八九十]+）", line):
+            section = line
+            continue
+        if cur is not None and line:
+            cur["text"] += "\n" + line
+    return articles
+
+
 def verify(articles, text, law):
     nums = [cn_to_arabic(a["article"]) for a in articles]
     if nums != list(range(1, len(nums) + 1)):
@@ -170,13 +219,14 @@ def main():
         verify(arts, text, title)
         print(f"[ok] {title}（{level}，施行 {eff}）：{len(arts)} 条")
         all_articles.extend(arts)
-    for title, level in RULES:
+    for title, level in RULES + NOTICES:
         p = raw_path(title)
         if not p.exists():
-            raise SystemExit(f"缺少部门规章留档：{p}")
+            raise SystemExit(f"缺少留档原文：{p}")
         head, text = p.read_text(encoding="utf-8").split("\n", 1)
         src, eff = head.split("\t")
-        arts = parse_articles(text, title, level, src, eff)
+        parse = parse_items if (title, level) in NOTICES else parse_articles
+        arts = parse(text, title, level, src, eff)
         verify(arts, text, title)
         print(f"[ok] {title}（{level}，施行 {eff}）：{len(arts)} 条")
         all_articles.extend(arts)

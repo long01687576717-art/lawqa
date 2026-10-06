@@ -322,7 +322,7 @@
   function analyze(data) {
     const keys = new Map((data.laws || []).map((l, i) => [lawKey(l.law, l.article), i]));
     const cited = [];   // 按回答中出现顺序
-    const re = /《([^》]{2,40})》第([零一二三四五六七八九十百\d]+)条/g;
+    const re = /《([^》]{2,40})》(?:（[^）]{1,8}）)?第([零一二三四五六七八九十百\d]+)条/g;
     for (const m of (data.answer || "").matchAll(re)) {
       const i = keys.get(lawKey(m[1], m[2]));
       if (i !== undefined && !cited.includes(i)) cited.push(i);
@@ -333,7 +333,7 @@
 
   function inline(s, data, info, mi) {
     let h = esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
-    h = h.replace(/《([^》]{2,40})》第([零一二三四五六七八九十百\d]+)条/g, (all, law, art) => {
+    h = h.replace(/《([^》]{2,40})》(?:（[^）]{1,8}）)?第([零一二三四五六七八九十百\d]+)条/g, (all, law, art) => {
       const i = info.keys.get(lawKey(law, art));
       return i === undefined ? all : `<a href="#" class="cite" data-m="${mi}" data-law="${i}" title="查看条文原文">${all}</a>`;
     });
